@@ -1,0 +1,66 @@
+name: Feature proposal / 功能提案
+description: Propose a focused feature, rule, or architecture change / 提议明确的功能、规则或架构变更
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the need before proposing an implementation. Rule changes require explicit maintainer approval and synchronized English and Chinese rule documents.
+
+        请先说明需求，再提出实现方案。规则变更需要维护者明确批准，并同步更新中英文规则文档。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity / 问题或机会
+      description: What user or project need should be addressed? / 需要解决什么用户或项目需求？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome / 期望结果
+      description: Describe observable behavior, not only implementation details. / 请描述可观察行为，不要只写实现细节。
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 范围
+      options:
+        - Rules / 规则
+        - Rules engine / 规则引擎
+        - Bevy interface / Bevy 界面
+        - Persistence or replay / 存档或回放
+        - Documentation or tooling / 文档或工具
+        - Future exploration / 未来探索
+    validations:
+      required: true
+  - type: textarea
+    id: rule_impact
+    attributes:
+      label: Rule and compatibility impact / 规则与兼容性影响
+      description: Identify affected rule sections, saves, replays, or public behavior. / 指出受影响的规则章节、存档、回放或公共行为。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 考虑过的替代方案
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria / 验收标准
+      description: How can reviewers verify completion? / 审查者如何验证功能已经完成？
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist / 检查清单
+      options:
+        - label: I searched for an existing proposal. / 我已搜索现有提案。
+          required: true
+        - label: I understand that approval is required before changing game rules or adding dependencies. / 我理解修改规则或添加依赖前需要获得批准。
+          required: true
