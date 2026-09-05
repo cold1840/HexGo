@@ -97,3 +97,111 @@ impl BoardGraph {
         (0..self.vertex_count()).map(VertexId::new)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vertex_store() {
+        let vertex = VertexId::new(42);
+        assert_eq!(vertex.index(), 42)
+    }
+
+    #[test]
+    fn test_vertex_equal() {
+        let v1 = VertexId::new(42);
+        let v2 = VertexId::new(42);
+        let v3 = VertexId::new(9);
+        assert_eq!(v1, v2);
+        assert_ne!(v3, v1);
+    }
+
+    #[test]
+    fn test_board_create() {
+        assert_eq!(
+            BoardGraph::from_edges(1, vec![(VertexId::new(0), VertexId::new(1))]),
+            Err(BoardError::UnknownVertex(VertexId::new(1)))
+        );
+
+        assert_eq!(
+            BoardGraph::from_edges(
+                2,
+                vec![
+                    (VertexId::new(0), VertexId::new(1)),
+                    (VertexId::new(1), VertexId::new(0))
+                ]
+            ),
+            Err(BoardError::DuplicateEdge(VertexId::new(0), VertexId(1)))
+        );
+
+        assert_eq!(
+            BoardGraph::from_edges(
+                2,
+                vec![
+                    (VertexId::new(0), VertexId::new(0)),
+                    (VertexId::new(0), VertexId::new(1))
+                ]
+            ),
+            Err(BoardError::SelfLoop(VertexId::new(0)))
+        );
+
+        assert_eq!(
+            BoardGraph::from_edges(
+                5,
+                vec![
+                    (VertexId::new(0), VertexId::new(1)),
+                    (VertexId::new(0), VertexId::new(2)),
+                    (VertexId::new(0), VertexId::new(3)),
+                    (VertexId::new(0), VertexId::new(4)),
+                ]
+            ),
+            Err(BoardError::TooManyNeighbors(VertexId(0)))
+        );
+
+        assert!(
+            BoardGraph::from_edges(
+                5,
+                vec![
+                    (VertexId::new(0), VertexId::new(1)),
+                    (VertexId::new(0), VertexId::new(2)),
+                    (VertexId::new(0), VertexId::new(3)),
+                    (VertexId::new(1), VertexId::new(4)),
+                    (VertexId::new(3), VertexId::new(2)),
+                ]
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_board_function() {
+        let board = BoardGraph::from_edges(
+            5,
+            vec![
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(0), VertexId::new(2)),
+                (VertexId::new(0), VertexId::new(3)),
+                (VertexId::new(1), VertexId::new(4)),
+                (VertexId::new(3), VertexId::new(2)),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(board.vertex_count(), 5);
+        assert!(board.contains(VertexId::new(3)));
+        assert!(!board.contains(VertexId::new(5)));
+
+        assert!(board.get_neighbors(VertexId::new(0)).is_some_and(
+            |neighbors| neighbors == [VertexId::new(1), VertexId::new(2), VertexId::new(3)]
+        ));
+
+        assert!(board.are_adjacent(VertexId::new(4), VertexId::new(1)));
+
+        assert!(!board.are_adjacent(VertexId::new(4), VertexId::new(2)));
+
+        for (i, vertex) in board.vertices().enumerate() {
+            assert_eq!(VertexId::new(i), vertex);
+        }
+    }
+}
