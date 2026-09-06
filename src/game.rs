@@ -13,6 +13,14 @@ use std::collections::VecDeque;
 pub mod board;
 pub mod player;
 pub mod state;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MoveError {
+    InvalidVertex,
+    Occupied,
+    Suicide,
+}
+
 pub struct Game {
     board: BoardGraph,
     occupancy: Vec<VertexState>,
@@ -109,6 +117,61 @@ impl Game {
         }
 
         Some(gruop)
+    }
+
+    pub fn play_move(&mut self, vertex: VertexId) -> Result<(), MoveError> {
+        let Some(state) = self.vertex_state(vertex) else {
+            return Err(MoveError::InvalidVertex);
+        };
+
+        if state != VertexState::Empty {
+            return Err(MoveError::Occupied);
+        }
+
+        let player = self.current_player();
+
+        let opponent = player.opponent();
+
+        let neighbors = self
+            .board()
+            .get_neighbors(vertex)
+            .ok_or(MoveError::InvalidVertex)?
+            .to_vec();
+
+        self.occupancy[vertex.index()] = VertexState::Occupied(player);
+
+        let mut captured = Vec::new();
+
+        // Capture opponent groups with no liberties.
+        for neighbor in neighbors {
+            if self.vertex_state(neighbor) != Some(VertexState::Occupied(opponent)) {
+                continue;
+            }
+
+            if self.has_liberty(neighbor) == Some(false)
+                && let Some(group) = self.remove_group(neighbor)
+            {
+                for stone in group {
+                    captured.push(stone);
+                }
+            }
+        }
+
+        // Prevent suicide moves.
+        if self.has_liberty(vertex) == Some(false) {
+            self.occupancy[vertex.index()] = VertexState::Empty;
+
+            // Restore captured stones.
+            for stone in captured {
+                self.occupancy[stone.index()] = VertexState::Occupied(opponent);
+            }
+
+            return Err(MoveError::Suicide);
+        }
+
+        self.current_player = opponent;
+
+        Ok(())
     }
 }
 
@@ -341,5 +404,141 @@ mod test {
         let removed = game.remove_group(VertexId::new(100));
 
         assert_eq!(removed, None);
+    }
+
+    #[test]
+    fn test_play_move() {
+        let edges = vec![
+            (VertexId::new(0), VertexId::new(1)),
+            (VertexId::new(1), VertexId::new(2)),
+        ];
+
+        let board = BoardGraph::from_edges(3, edges).unwrap();
+        let mut game = Game::new(board);
+
+        assert_eq!(game.play_move(VertexId::new(1)), Ok(()));
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(1)),
+            Some(VertexState::Occupied(Player::Black))
+        );
+
+        // Switch to the other player after a valid move.
+        assert_eq!(game.current_player(), Player::White);
+    }
+
+    #[test]
+    fn test_play_move_on_occupied_vertex() {
+        let edges = vec![(VertexId::new(0), VertexId::new(1))];
+
+        let board = BoardGraph::from_edges(2, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::White);
+
+        assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::Occupied));
+
+        // Player should not change after an invalid move.
+        assert_eq!(game.current_player(), Player::Black);
+    }
+
+    #[test]
+    fn test_play_move_invalid_vertex() {
+        let board = BoardGraph::from_edges(2, vec![]).unwrap();
+        let mut game = Game::new(board);
+
+        assert_eq!(
+            game.play_move(VertexId::new(100)),
+            Err(MoveError::InvalidVertex)
+        );
+
+        assert_eq!(game.current_player(), Player::Black);
+    }
+
+    #[test]
+    fn test_play_move_captures_opponent() {
+        //       0(B)
+        //        |
+        // 2(B) - 1(W) - 3(?)
+        //
+        // Black plays at 3, leaving White at 1 with no liberties.
+
+        let edges = vec![
+            (VertexId::new(1), VertexId::new(0)),
+            (VertexId::new(1), VertexId::new(2)),
+            (VertexId::new(1), VertexId::new(3)),
+        ];
+
+        let board = BoardGraph::from_edges(4, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[1] = VertexState::Occupied(Player::White);
+        game.occupancy[2] = VertexState::Occupied(Player::Black);
+
+        assert_eq!(game.play_move(VertexId::new(3)), Ok(()));
+
+        // The white stone should be captured.
+        assert_eq!(
+            game.vertex_state(VertexId::new(1)),
+            Some(VertexState::Empty)
+        );
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(3)),
+            Some(VertexState::Occupied(Player::Black))
+        );
+
+        assert_eq!(game.current_player(), Player::White);
+    }
+
+    #[test]
+    fn test_play_move_prevents_suicide() {
+        //     4
+        //     |
+        //     0(W)
+        //     |
+        // 2(W)-1(?)-3(W)
+        // |         |
+        // 5         6
+        //
+        // Black plays at 1.
+        // All neighboring white stones still have liberties,
+        // so none are captured, while Black has no liberties.
+
+        let edges = vec![
+            (VertexId::new(1), VertexId::new(0)),
+            (VertexId::new(1), VertexId::new(2)),
+            (VertexId::new(1), VertexId::new(3)),
+            (VertexId::new(0), VertexId::new(4)),
+            (VertexId::new(2), VertexId::new(5)),
+            (VertexId::new(3), VertexId::new(6)),
+        ];
+
+        let board = BoardGraph::from_edges(7, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::White);
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+        game.occupancy[3] = VertexState::Occupied(Player::White);
+
+        assert_eq!(game.play_move(VertexId::new(1)), Err(MoveError::Suicide));
+
+        // The attempted move must be rolled back.
+        assert_eq!(
+            game.vertex_state(VertexId::new(1)),
+            Some(VertexState::Empty)
+        );
+
+        // Player must not change after an illegal move.
+        assert_eq!(game.current_player(), Player::Black);
+
+        // White stones must remain untouched.
+        for id in [0, 2, 3] {
+            assert_eq!(
+                game.vertex_state(VertexId::new(id)),
+                Some(VertexState::Occupied(Player::White))
+            );
+        }
     }
 }

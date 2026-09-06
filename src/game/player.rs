@@ -5,7 +5,7 @@ pub enum Player {
 }
 
 impl Player {
-    pub fn oppoent(self) -> Self {
+    pub fn opponent(self) -> Self {
         match self {
             Self::Black => Self::White,
             Self::White => Self::Black,
@@ -18,7 +18,7 @@ mod test {
     use super::*;
     #[test]
     fn test_player_oppoent() {
-        assert_eq!(Player::Black.oppoent(), Player::White);
-        assert_eq!(Player::White.oppoent(), Player::Black);
+        assert_eq!(Player::Black.opponent(), Player::White);
+        assert_eq!(Player::White.opponent(), Player::Black);
     }
 }
