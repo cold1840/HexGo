@@ -22,6 +22,13 @@ use std::collections::VecDeque;
 
 const DEFAULT_KOMI: f64 = 0.5;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GameResult {
+    WinByScore { winner: Player, margin: f64 },
+    WinByResignation { winner: Player },
+    Draw,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BoardSnapshot {
     occupancy: Vec<VertexState>,
@@ -353,6 +360,34 @@ impl Game {
         }
 
         Score::new(black, white + self.komi)
+    }
+
+    pub fn result(&self) -> Option<GameResult> {
+        match self.status {
+            GameStatus::Playing => None,
+
+            GameStatus::Finished(GameEndReason::ConsecutivePasses) => {
+                let score = self.score();
+
+                if score.black() > score.white() {
+                    Some(GameResult::WinByScore {
+                        winner: Player::Black,
+                        margin: score.black() - score.white(),
+                    })
+                } else if score.black() < score.white() {
+                    Some(GameResult::WinByScore {
+                        winner: Player::White,
+                        margin: score.white() - score.black(),
+                    })
+                } else {
+                    Some(GameResult::Draw)
+                }
+            }
+
+            GameStatus::Finished(GameEndReason::Resignation { winner, .. }) => {
+                Some(GameResult::WinByResignation { winner })
+            }
+        }
     }
 }
 
@@ -1317,5 +1352,124 @@ mod test {
 
         assert_eq!(score.black(), 1.0);
         assert_eq!(score.white(), game.komi());
+    }
+
+    #[test]
+    fn test_result_is_none_while_playing() {
+        let game = create_test_game();
+
+        assert_eq!(game.result(), None);
+    }
+
+    #[test]
+    fn test_result_black_wins_by_score() {
+        let board = BoardGraph::from_edges(1, vec![]).unwrap();
+        let mut game = Game::new(board);
+
+        game.komi = 0.0;
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByScore {
+                winner: Player::Black,
+                margin: 1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn test_result_white_wins_by_score() {
+        let board = BoardGraph::from_edges(1, vec![]).unwrap();
+        let mut game = Game::new(board);
+
+        game.komi = 0.0;
+        game.occupancy[0] = VertexState::Occupied(Player::White);
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByScore {
+                winner: Player::White,
+                margin: 1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn test_result_draw() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.komi = 0.0;
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[1] = VertexState::Occupied(Player::White);
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(game.result(), Some(GameResult::Draw));
+    }
+
+    #[test]
+    fn test_result_white_wins_by_resignation() {
+        let mut game = create_test_game();
+
+        // Black is the current player and resigns.
+        game.resign().unwrap();
+
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByResignation {
+                winner: Player::White,
+            })
+        );
+    }
+
+    #[test]
+    fn test_result_black_wins_by_resignation() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        // Black makes a legal move, so it becomes White's turn.
+        game.play_move(VertexId::new(0)).unwrap();
+
+        assert_eq!(game.current_player(), Player::White);
+
+        game.resign().unwrap();
+
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByResignation {
+                winner: Player::Black,
+            })
+        );
+    }
+
+    #[test]
+    fn test_resignation_result_ignores_score() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[1] = VertexState::Occupied(Player::Black);
+
+        // Black is massively ahead, but resigns anyway.
+        game.resign().unwrap();
+
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByResignation {
+                winner: Player::White,
+            })
+        );
     }
 }
