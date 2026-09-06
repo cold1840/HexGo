@@ -23,16 +23,17 @@ Run `cargo run`, then complete this checklist before submitting a change that af
 
 ## Narrow and Touch Layout
 
-1. Resize the window below 800 logical pixels wide or to portrait orientation. Confirm that the controls move below the board, the three action buttons share one row, and desktop-only headings and keyboard help are hidden.
+1. Resize the window below 800 logical pixels wide or to portrait orientation. Confirm that the controls move below the board, the four action buttons form a fully visible two-by-two grid, and desktop-only headings and keyboard help are hidden.
 2. Confirm that the board remains centered and fully visible above the bottom panel without overlapping it.
 3. On a touch-capable device, tap several empty intersections and confirm that each tap places exactly one stone at the nearest intersection.
 4. Tap the bottom-panel actions and confirm that the tap does not also place a stone on the board.
-5. End a game and confirm that the compact result summary fits in the bottom panel. Return to a wide landscape window and confirm that the detailed result card returns.
+5. Open Game Rules on a touch-capable device, swipe the rule text both upward and downward, and confirm that the content scrolls in the matching direction and remains within its bounds. Close the dialog and confirm that the game state is unchanged.
+6. End a game and confirm that the compact result summary fits in the bottom panel. Return to a wide landscape window and confirm that the detailed result card returns.
 
 ## Keyboard Play
 
 1. Press `Tab` until the board is focused. Move through intersections with all four arrow keys and place a stone with `Enter` or `Space`.
-2. Use `Tab` and `Shift+Tab` to visit Pass, Resign, and Restart. The focused action must have a visible accent border.
+2. Use `Tab` and `Shift+Tab` to visit Pass, Resign, Restart, and Game Rules. The focused action must have a visible accent border.
 3. Activate each action using only the keyboard. Press `Escape` in a confirmation dialog and confirm that no state changes.
 
 ## Completion and Restart
