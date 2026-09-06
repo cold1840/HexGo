@@ -19,6 +19,7 @@ pub enum MoveError {
     InvalidVertex,
     Occupied,
     Suicide,
+    Superko,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,12 +39,12 @@ impl Game {
         let count = board.vertex_count();
 
         let occupancy = vec![VertexState::Empty; count];
-        let initial_position = BoardSnapshot {
+        let initial_snapshot = BoardSnapshot {
             occupancy: occupancy.clone(),
         };
 
         let mut snapshot_history = HashSet::new();
-        snapshot_history.insert(initial_position);
+        snapshot_history.insert(initial_snapshot);
 
         Self {
             board,
@@ -183,16 +184,28 @@ impl Game {
             self.occupancy[vertex.index()] = VertexState::Empty;
 
             // Restore captured stones.
-            for stone in captured {
+            for &stone in &captured {
                 self.occupancy[stone.index()] = VertexState::Occupied(opponent);
             }
 
             return Err(MoveError::Suicide);
         }
 
+        let snapshot = self.current_snapshot();
+
+        if self.snapshot_history.contains(&snapshot) {
+            self.occupancy[vertex.index()] = VertexState::Empty;
+
+            for &stone in &captured {
+                self.occupancy[stone.index()] = VertexState::Occupied(opponent);
+            }
+
+            return Err(MoveError::Superko);
+        }
+
         self.current_player = opponent;
 
-        self.snapshot_history.insert(self.current_snapshot());
+        self.snapshot_history.insert(snapshot);
 
         Ok(())
     }
@@ -566,7 +579,7 @@ mod test {
     }
 
     #[test]
-    fn test_initial_board_position() {
+    fn test_initial_board_snapshot() {
         let game = create_test_game();
 
         let snapshot = game.current_snapshot();
@@ -578,7 +591,7 @@ mod test {
     }
 
     #[test]
-    fn test_same_board_positions_are_equal() {
+    fn test_same_board_snapshots_are_equal() {
         let mut game = create_test_game();
 
         game.occupancy[0] = VertexState::Occupied(Player::Black);
@@ -591,7 +604,7 @@ mod test {
     }
 
     #[test]
-    fn test_different_board_positions_are_not_equal() {
+    fn test_different_board_snapshots_are_not_equal() {
         let mut game = create_test_game();
 
         let empty = game.current_snapshot();
@@ -604,7 +617,7 @@ mod test {
     }
 
     #[test]
-    fn test_initial_position_is_recorded() {
+    fn test_initial_snapshot_is_recorded() {
         let game = create_test_game();
 
         let snapshot = game.current_snapshot();
@@ -614,7 +627,7 @@ mod test {
     }
 
     #[test]
-    fn test_recorded_position_is_a_snapshot() {
+    fn test_recorded_snapshot_is_a_snapshot() {
         let mut game = create_test_game();
 
         let initial = game.current_snapshot();
@@ -623,5 +636,62 @@ mod test {
 
         assert!(game.snapshot_history.contains(&initial));
         assert_ne!(game.current_snapshot(), initial);
+    }
+
+    #[test]
+    fn test_play_move_prevents_superko() {
+        let edges = vec![
+            (VertexId::new(0), VertexId::new(1)),
+            (VertexId::new(0), VertexId::new(2)),
+            (VertexId::new(0), VertexId::new(3)),
+            (VertexId::new(1), VertexId::new(4)),
+            (VertexId::new(1), VertexId::new(5)),
+            // Extra liberties for the surrounding stones.
+            (VertexId::new(2), VertexId::new(6)),
+            (VertexId::new(3), VertexId::new(7)),
+            (VertexId::new(4), VertexId::new(8)),
+            (VertexId::new(5), VertexId::new(9)),
+        ];
+
+        let board = BoardGraph::from_edges(10, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::White);
+        game.occupancy[2] = VertexState::Occupied(Player::Black);
+        game.occupancy[3] = VertexState::Occupied(Player::Black);
+        game.occupancy[4] = VertexState::Occupied(Player::White);
+        game.occupancy[5] = VertexState::Occupied(Player::White);
+
+        game.snapshot_history.clear();
+        game.snapshot_history.insert(game.current_snapshot());
+
+        // Black captures White at 0.
+        assert_eq!(game.play_move(VertexId::new(1)), Ok(()));
+
+        let snapshot_after_capture = game.current_snapshot();
+        let history_len = game.snapshot_history.len();
+
+        // White tries to recapture Black at 1,
+        // which would recreate the previous board snapshot.
+        assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::Superko));
+
+        // Illegal move must leave the state unchanged.
+        assert_eq!(game.current_snapshot(), snapshot_after_capture);
+        assert_eq!(game.current_player(), Player::White);
+        assert_eq!(game.snapshot_history.len(), history_len);
+    }
+
+    #[test]
+    fn test_legal_move_records_snapshot() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        let history_len = game.snapshot_history.len();
+
+        assert_eq!(game.play_move(VertexId::new(0)), Ok(()));
+
+        assert_eq!(game.snapshot_history.len(), history_len + 1);
+        assert!(game.snapshot_history.contains(&game.current_snapshot()));
     }
 }
