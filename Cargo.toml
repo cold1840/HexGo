@@ -8,4 +8,4 @@ name = "hex_go"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-bevy = "0.19.1"
+bevy = { version = "0.19.1", features = ["android-game-activity"] }
