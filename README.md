@@ -6,7 +6,7 @@
 
 HexGo is a new Go-like board game played on the vertices of a regular hexagonal tiling. A typical interior point has three neighbors instead of the four found on a standard Go board, producing a distinct topology for connections, liberties, captures, life, and territory.
 
-The project is in its initial development stage. The game rules are specified, while the playable implementation currently starts a minimal Bevy application.
+The project includes a deterministic rules engine and a Bevy-based local two-player interface. The first playable board preset is provisional while Phase 2 usability work continues.
 
 ## Core Rules at a Glance
 
@@ -44,6 +44,8 @@ git switch -c feat/your-change
 cargo run
 ```
 
+The local game supports pointer placement and full keyboard control. Use `Tab` to move between the board and actions, the arrow keys to select an intersection, and `Enter` or `Space` to activate the current selection. See the [manual smoke test](docs/MANUAL_SMOKE_TEST.md) for the complete interaction checklist.
+
 Do not commit directly to `main`.
 
 ## Quality Checks
@@ -69,6 +71,7 @@ pre-commit run --all-files
 - [Game rules](docs/RULES.md) ([中文](docs/RULES.zh-CN.md))
 - [Architecture](docs/ARCHITECTURE.md) ([中文](docs/ARCHITECTURE.zh-CN.md))
 - [Roadmap](docs/ROADMAP.md) ([中文](docs/ROADMAP.zh-CN.md))
+- [Manual smoke test](docs/MANUAL_SMOKE_TEST.md) ([中文](docs/MANUAL_SMOKE_TEST.zh-CN.md))
 - [Contributing](CONTRIBUTING.md) ([中文](CONTRIBUTING.zh-CN.md))
 - [Code of Conduct](CODE_OF_CONDUCT.md) ([中文](CODE_OF_CONDUCT.zh-CN.md))
 - [Security policy](SECURITY.md) ([中文](SECURITY.zh-CN.md))
