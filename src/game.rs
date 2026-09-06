@@ -32,6 +32,7 @@ pub struct Game {
     occupancy: Vec<VertexState>,
     current_player: Player,
     snapshot_history: HashSet<BoardSnapshot>,
+    consecutive_passes: u8,
 }
 
 impl Game {
@@ -51,6 +52,7 @@ impl Game {
             occupancy,
             current_player: Player::Black,
             snapshot_history,
+            consecutive_passes: 0,
         }
     }
 
@@ -204,10 +206,24 @@ impl Game {
         }
 
         self.current_player = opponent;
+        self.consecutive_passes = 0;
 
         self.snapshot_history.insert(snapshot);
 
         Ok(())
+    }
+
+    pub fn pass_turn(&mut self) {
+        self.consecutive_passes += 1;
+        self.current_player = self.current_player.opponent();
+    }
+
+    pub fn consecutive_passes(&self) -> u8 {
+        self.consecutive_passes
+    }
+
+    pub fn both_players_passed(&self) -> bool {
+        self.consecutive_passes >= 2
     }
 }
 
@@ -693,5 +709,71 @@ mod test {
 
         assert_eq!(game.snapshot_history.len(), history_len + 1);
         assert!(game.snapshot_history.contains(&game.current_snapshot()));
+    }
+
+    #[test]
+    fn test_pass_switches_player() {
+        let mut game = create_test_game();
+
+        game.pass_turn();
+
+        assert_eq!(game.current_player(), Player::White);
+    }
+
+    #[test]
+    fn test_pass_increments_consecutive_passes() {
+        let mut game = create_test_game();
+
+        assert_eq!(game.consecutive_passes(), 0);
+
+        game.pass_turn();
+
+        assert_eq!(game.consecutive_passes(), 1);
+
+        game.pass_turn();
+
+        assert_eq!(game.consecutive_passes(), 2);
+    }
+
+    #[test]
+    fn test_two_consecutive_passes() {
+        let mut game = create_test_game();
+
+        game.pass_turn();
+
+        assert!(!game.both_players_passed());
+
+        game.pass_turn();
+
+        assert!(game.both_players_passed());
+    }
+
+    #[test]
+    fn test_move_resets_consecutive_passes() {
+        let edges = vec![(VertexId::new(0), VertexId::new(1))];
+
+        let board = BoardGraph::from_edges(2, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.pass_turn();
+
+        assert_eq!(game.consecutive_passes(), 1);
+
+        assert_eq!(game.play_move(VertexId::new(0)), Ok(()));
+
+        assert_eq!(game.consecutive_passes(), 0);
+    }
+
+    #[test]
+    fn test_pass_does_not_record_board_snapshot() {
+        let mut game = create_test_game();
+
+        let snapshot = game.current_snapshot();
+        let history_len = game.snapshot_history.len();
+
+        game.pass_turn();
+
+        assert_eq!(game.current_snapshot(), snapshot);
+        assert_eq!(game.snapshot_history.len(), history_len);
     }
 }
