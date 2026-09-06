@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use bevy::platform::collections::HashSet;
+use std::collections::HashSet;
 
 use crate::game::{
     board::{BoardGraph, VertexId},
@@ -21,20 +21,35 @@ pub enum MoveError {
     Suicide,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BoardSnapshot {
+    occupancy: Vec<VertexState>,
+}
+
 pub struct Game {
     board: BoardGraph,
     occupancy: Vec<VertexState>,
     current_player: Player,
+    snapshot_history: HashSet<BoardSnapshot>,
 }
 
 impl Game {
     pub fn new(board: BoardGraph) -> Self {
         let count = board.vertex_count();
 
+        let occupancy = vec![VertexState::Empty; count];
+        let initial_position = BoardSnapshot {
+            occupancy: occupancy.clone(),
+        };
+
+        let mut snapshot_history = HashSet::new();
+        snapshot_history.insert(initial_position);
+
         Self {
             board,
-            occupancy: vec![VertexState::Empty; count],
+            occupancy,
             current_player: Player::Black,
+            snapshot_history,
         }
     }
 
@@ -44,6 +59,12 @@ impl Game {
 
     pub fn current_player(&self) -> Player {
         self.current_player
+    }
+
+    pub fn current_snapshot(&self) -> BoardSnapshot {
+        BoardSnapshot {
+            occupancy: self.occupancy.clone(),
+        }
     }
 
     pub fn vertex_state(&self, id: VertexId) -> Option<VertexState> {
@@ -170,6 +191,8 @@ impl Game {
         }
 
         self.current_player = opponent;
+
+        self.snapshot_history.insert(self.current_snapshot());
 
         Ok(())
     }
@@ -540,5 +563,65 @@ mod test {
                 Some(VertexState::Occupied(Player::White))
             );
         }
+    }
+
+    #[test]
+    fn test_initial_board_position() {
+        let game = create_test_game();
+
+        let snapshot = game.current_snapshot();
+
+        assert_eq!(
+            snapshot.occupancy,
+            vec![VertexState::Empty; game.board().vertex_count()]
+        );
+    }
+
+    #[test]
+    fn test_same_board_positions_are_equal() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+
+        let first = game.current_snapshot();
+        let second = game.current_snapshot();
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_different_board_positions_are_not_equal() {
+        let mut game = create_test_game();
+
+        let empty = game.current_snapshot();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        let occupied = game.current_snapshot();
+
+        assert_ne!(empty, occupied);
+    }
+
+    #[test]
+    fn test_initial_position_is_recorded() {
+        let game = create_test_game();
+
+        let snapshot = game.current_snapshot();
+
+        assert!(game.snapshot_history.contains(&snapshot));
+        assert_eq!(game.snapshot_history.len(), 1);
+    }
+
+    #[test]
+    fn test_recorded_position_is_a_snapshot() {
+        let mut game = create_test_game();
+
+        let initial = game.current_snapshot();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        assert!(game.snapshot_history.contains(&initial));
+        assert_ne!(game.current_snapshot(), initial);
     }
 }
