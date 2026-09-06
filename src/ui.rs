@@ -1,7 +1,10 @@
 use std::fs;
 
 use bevy::{
-    input::mouse::{MouseScrollUnit, MouseWheel},
+    input::{
+        mouse::{MouseScrollUnit, MouseWheel},
+        touch::{TouchInput, TouchPhase},
+    },
     prelude::*,
     window::{PrimaryWindow, WindowResizeConstraints, WindowResolution},
 };
@@ -18,7 +21,8 @@ use crate::{
 };
 
 const SIDEBAR_WIDTH: f32 = 300.0;
-const MOBILE_PANEL_HEIGHT: f32 = 232.0;
+const MOBILE_PANEL_HEIGHT: f32 = 288.0;
+const MOBILE_PANEL_MAX_HEIGHT_RATIO: f32 = 0.55;
 const MOBILE_BREAKPOINT: f32 = 800.0;
 const BOARD_PADDING: f32 = 72.0;
 const MOBILE_BOARD_PADDING: f32 = 28.0;
@@ -165,6 +169,7 @@ enum ResponsiveElement {
     DesktopOnly,
     StatusGroup,
     ActionGroup,
+    ActionButton,
 }
 
 #[derive(Component)]
@@ -205,9 +210,6 @@ struct RulesOverlay;
 
 #[derive(Component)]
 struct RulesScroll;
-
-#[derive(Component)]
-struct RulesScrollStart(Vec2);
 
 #[derive(Debug, Clone, Copy, Component)]
 enum AdaptiveContent {
@@ -403,10 +405,22 @@ fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
                     },
                 ))
                 .with_children(|actions| {
-                    actions.spawn(action_button(ButtonAction::Pass, "停着", font));
-                    actions.spawn(action_button(ButtonAction::Resign, "认输", font));
-                    actions.spawn(action_button(ButtonAction::Restart, "重新开始", font));
-                    actions.spawn(action_button(ButtonAction::Rules, "游戏规则", font));
+                    actions.spawn((
+                        ResponsiveElement::ActionButton,
+                        action_button(ButtonAction::Pass, "停着", font),
+                    ));
+                    actions.spawn((
+                        ResponsiveElement::ActionButton,
+                        action_button(ButtonAction::Resign, "认输", font),
+                    ));
+                    actions.spawn((
+                        ResponsiveElement::ActionButton,
+                        action_button(ButtonAction::Restart, "重新开始", font),
+                    ));
+                    actions.spawn((
+                        ResponsiveElement::ActionButton,
+                        action_button(ButtonAction::Rules, "游戏规则", font),
+                    ));
                 });
             panel
                 .spawn((
@@ -541,7 +555,6 @@ fn spawn_rules_modal(commands: &mut Commands, font: &Handle<Font>) {
                     dialog.spawn(text_bundle("游戏规则", font, 27.0, TEXT_COLOR));
                     let mut scroll = dialog.spawn((
                         RulesScroll,
-                        RulesScrollStart(Vec2::ZERO),
                         ScrollPosition::default(),
                         Interaction::default(),
                         Pickable {
@@ -551,43 +564,18 @@ fn spawn_rules_modal(commands: &mut Commands, font: &Handle<Font>) {
                         Node {
                             width: percent(100),
                             flex_grow: 1.0,
+                            flex_direction: FlexDirection::Column,
                             overflow: Overflow::scroll_y(),
                             padding: UiRect::right(px(10)),
                             ..default()
                         },
                     ));
-                    scroll.observe(
-                        |drag: On<Pointer<Drag>>,
-                         ui_scale: Res<UiScale>,
-                         mut scroll: Single<
-                            (&mut ScrollPosition, &RulesScrollStart, &ComputedNode),
-                            With<RulesScroll>,
-                        >| {
-                            let max_offset = (scroll.2.content_size().y - scroll.2.size().y)
-                                .max(0.0)
-                                * scroll.2.inverse_scale_factor;
-                            scroll.0.y = (scroll.1.0.y - drag.distance.y / ui_scale.0)
-                                .clamp(0.0, max_offset);
-                        },
-                    );
-                    scroll.observe(
-                        |_: On<Pointer<DragStart>>,
-                         mut scroll: Single<
-                            (&ComputedNode, &mut RulesScrollStart),
-                            With<RulesScroll>,
-                        >| {
-                            scroll.1.0 = scroll.0.scroll_position * scroll.0.inverse_scale_factor;
-                        },
-                    );
                     scroll.with_children(|content| {
                         content
                             .spawn(text_bundle(RULES_SUMMARY, font, 16.0, TEXT_COLOR))
                             .insert(TextLayout::new(Justify::Left, LineBreak::AnyCharacter))
                             .insert(Pickable::IGNORE)
-                            .insert(Node {
-                                width: percent(100),
-                                ..default()
-                            });
+                            .insert(rules_text_node());
                     });
                     dialog.spawn(rules_close_button(font));
                 });
@@ -649,6 +637,14 @@ fn rules_close_button(font: &Handle<Font>) -> impl Bundle {
     )
 }
 
+fn rules_text_node() -> Node {
+    Node {
+        width: percent(100),
+        flex_shrink: 0.0,
+        ..default()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ResponsiveLayout {
     panel_on_bottom: bool,
@@ -659,7 +655,7 @@ struct ResponsiveLayout {
 fn responsive_layout(window_size: Vec2) -> ResponsiveLayout {
     let panel_on_bottom = window_size.x < MOBILE_BREAKPOINT || window_size.x < window_size.y;
     if panel_on_bottom {
-        let panel_height = MOBILE_PANEL_HEIGHT.min(window_size.y * 0.42);
+        let panel_height = mobile_panel_height(window_size.y);
         ResponsiveLayout {
             panel_on_bottom,
             board_size: Vec2::new(
@@ -683,10 +679,14 @@ fn responsive_layout(window_size: Vec2) -> ResponsiveLayout {
 fn screen_position_is_on_board(window_size: Vec2, position: Vec2) -> bool {
     let layout = responsive_layout(window_size);
     if layout.panel_on_bottom {
-        position.y < window_size.y - MOBILE_PANEL_HEIGHT.min(window_size.y * 0.42)
+        position.y < window_size.y - mobile_panel_height(window_size.y)
     } else {
         position.x < window_size.x - SIDEBAR_WIDTH
     }
+}
+
+fn mobile_panel_height(window_height: f32) -> f32 {
+    MOBILE_PANEL_HEIGHT.min(window_height * MOBILE_PANEL_MAX_HEIGHT_RATIO)
 }
 
 fn vertex_at_screen_position(
@@ -718,7 +718,7 @@ fn layout_control_panel(
                 node.top = Val::Auto;
                 node.bottom = px(0);
                 node.width = percent(100);
-                node.height = px(MOBILE_PANEL_HEIGHT.min(window.height() * 0.42));
+                node.height = px(mobile_panel_height(window.height()));
                 node.padding = UiRect::all(px(14));
                 node.row_gap = px(8);
             }
@@ -750,16 +750,43 @@ fn layout_control_panel(
                 node.row_gap = px(16);
             }
             (ResponsiveElement::ActionGroup, true) => {
-                node.flex_direction = FlexDirection::Row;
+                node.display = Display::Grid;
+                node.height = px(104);
+                node.grid_template_columns = RepeatedGridTrack::flex(2, 1.0);
+                node.grid_template_rows = RepeatedGridTrack::px(2, 48.0);
                 node.column_gap = px(8);
-                node.row_gap = px(0);
+                node.row_gap = px(8);
             }
             (ResponsiveElement::ActionGroup, false) => {
+                node.display = Display::Flex;
+                node.height = Val::Auto;
+                node.grid_template_columns.clear();
+                node.grid_template_rows.clear();
                 node.flex_direction = FlexDirection::Column;
                 node.column_gap = px(0);
                 node.row_gap = px(16);
             }
+            (ResponsiveElement::ActionButton, true) => {
+                layout_action_button(&mut node, true);
+            }
+            (ResponsiveElement::ActionButton, false) => {
+                layout_action_button(&mut node, false);
+            }
         }
+    }
+}
+
+fn layout_action_button(node: &mut Node, is_mobile: bool) {
+    if is_mobile {
+        node.width = percent(100);
+        node.min_width = px(0);
+        node.flex_basis = Val::Auto;
+        node.flex_grow = 0.0;
+    } else {
+        node.width = percent(100);
+        node.min_width = Val::Auto;
+        node.flex_basis = Val::Auto;
+        node.flex_grow = 0.0;
     }
 }
 
@@ -1021,12 +1048,15 @@ fn confirm_modal(session: &mut LocalGameSession, ui: &mut UiState, modal: ModalK
 
 fn scroll_rules(
     mut mouse_wheel: MessageReader<MouseWheel>,
+    mut touch_input: MessageReader<TouchInput>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
     ui: Res<UiState>,
     mut scroll: Single<(&mut ScrollPosition, &ComputedNode), With<RulesScroll>>,
 ) {
     if ui.modal != Some(ModalKind::Rules) {
         mouse_wheel.clear();
+        touch_input.clear();
         return;
     }
 
@@ -1048,9 +1078,32 @@ fn scroll_rules(
     } else {
         0.0
     };
-    let max_offset =
-        (scroll.1.content_size().y - scroll.1.size().y).max(0.0) * scroll.1.inverse_scale_factor;
-    scroll.0.y = (scroll.0.y + wheel_delta + keyboard_delta).clamp(0.0, max_offset);
+    let has_touch_move = touch_input
+        .read()
+        .any(|event| event.phase == TouchPhase::Moved);
+    let touch_delta = if has_touch_move {
+        touches.iter().map(|touch| -touch.delta().y).sum::<f32>()
+    } else {
+        0.0
+    };
+    scroll.0.y = clamped_scroll_position(
+        scroll.0.y,
+        wheel_delta + keyboard_delta + touch_delta,
+        scroll.1.content_size().y,
+        scroll.1.size().y,
+        scroll.1.inverse_scale_factor,
+    );
+}
+
+fn clamped_scroll_position(
+    current: f32,
+    delta: f32,
+    content_size: f32,
+    visible_size: f32,
+    inverse_scale_factor: f32,
+) -> f32 {
+    let max_offset = (content_size - visible_size).max(0.0) * inverse_scale_factor;
+    (current + delta).clamp(0.0, max_offset)
 }
 
 fn submit_command(session: &mut LocalGameSession, ui: &mut UiState, command: SessionCommand) {
@@ -1327,12 +1380,13 @@ fn sync_rules_modal(
     mut scroll: Single<&mut ScrollPosition, With<RulesScroll>>,
 ) {
     let is_open = ui.modal == Some(ModalKind::Rules);
+    let was_open = overlay.display == Display::Flex;
     overlay.display = if is_open {
         Display::Flex
     } else {
         Display::None
     };
-    if ui.is_changed() && is_open {
+    if is_open && !was_open {
         scroll.0 = Vec2::ZERO;
     }
 }
@@ -1423,6 +1477,71 @@ mod tests {
             window_size,
             Vec2::new(240.0, 700.0)
         ));
+    }
+
+    #[test]
+    fn mobile_action_buttons_share_the_available_row_width() {
+        let mut node = Node::default();
+
+        layout_action_button(&mut node, true);
+
+        assert_eq!(node.width, percent(100));
+        assert_eq!(node.min_width, px(0));
+        assert_eq!(node.flex_basis, Val::Auto);
+        assert_eq!(node.flex_grow, 0.0);
+    }
+
+    #[test]
+    fn upward_touch_motion_scrolls_rules_down_within_bounds() {
+        assert_eq!(clamped_scroll_position(0.0, 48.0, 600.0, 300.0, 1.0), 48.0);
+        assert_eq!(
+            clamped_scroll_position(280.0, 48.0, 600.0, 300.0, 1.0),
+            300.0
+        );
+        assert_eq!(clamped_scroll_position(20.0, -48.0, 600.0, 300.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn rules_text_keeps_its_full_height_inside_the_scroll_view() {
+        let node = rules_text_node();
+
+        assert_eq!(node.width, percent(100));
+        assert_eq!(node.flex_shrink, 0.0);
+    }
+
+    #[test]
+    fn unrelated_ui_changes_do_not_reset_an_open_rules_scroll() {
+        let mut app = App::new();
+        app.init_resource::<UiState>()
+            .add_systems(Update, sync_rules_modal);
+        app.world_mut().spawn((
+            RulesOverlay,
+            Node {
+                display: Display::None,
+                ..default()
+            },
+        ));
+        app.world_mut()
+            .spawn((RulesScroll, ScrollPosition(Vec2::new(0.0, 120.0))));
+
+        app.world_mut().resource_mut::<UiState>().modal = Some(ModalKind::Rules);
+        app.update();
+        {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&mut ScrollPosition, With<RulesScroll>>();
+            let mut scroll = query.single_mut(world).unwrap();
+            assert_eq!(scroll.0, Vec2::ZERO);
+            scroll.y = 64.0;
+        }
+
+        app.world_mut().resource_mut::<UiState>().hovered = None;
+        app.update();
+        {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&ScrollPosition, With<RulesScroll>>();
+            let scroll = query.single(world).unwrap();
+            assert_eq!(scroll.y, 64.0);
+        }
     }
 
     #[test]
