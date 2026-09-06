@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use crate::game::{
     board::{BoardGraph, VertexId},
+    error::*,
     player::Player,
     state::{GameStatus::Playing, *},
 };
@@ -11,22 +12,9 @@ use crate::game::{
 use std::collections::VecDeque;
 
 pub mod board;
+pub mod error;
 pub mod player;
 pub mod state;
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum MoveError {
-    InvalidVertex,
-    Occupied,
-    Suicide,
-    Superko,
-    GameOver,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PassError {
-    GameOver,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BoardSnapshot {
@@ -156,7 +144,7 @@ impl Game {
     }
 
     pub fn play_move(&mut self, vertex: VertexId) -> Result<(), MoveError> {
-        if self.status == GameStatus::Finished {
+        if self.status != GameStatus::Playing {
             return Err(MoveError::GameOver);
         }
 
@@ -230,17 +218,30 @@ impl Game {
     }
 
     pub fn pass_turn(&mut self) -> Result<(), PassError> {
-        if self.status == GameStatus::Finished {
+        if self.status != GameStatus::Playing {
             return Err(PassError::GameOver);
         }
 
         self.consecutive_passes += 1;
 
         if self.consecutive_passes >= 2 {
-            self.status = GameStatus::Finished;
+            self.status = GameStatus::Finished(GameEndReason::ConsecutivePasses);
         }
 
         self.current_player = self.current_player.opponent();
+
+        Ok(())
+    }
+
+    pub fn resign(&mut self) -> Result<(), ResignError> {
+        if self.status != GameStatus::Playing {
+            return Err(ResignError::GameOver);
+        }
+
+        let resigned = self.current_player;
+        let winner = resigned.opponent();
+
+        self.status = GameStatus::Finished(GameEndReason::Resignation { resigned, winner });
 
         Ok(())
     }
@@ -256,7 +257,7 @@ impl Game {
 
 #[cfg(test)]
 mod test {
-    use crate::game::board::VertexId;
+    use crate::game::{board::VertexId, state::GameEndReason::ConsecutivePasses};
 
     use super::*;
 
@@ -829,7 +830,7 @@ mod test {
         assert_eq!(game.status(), GameStatus::Playing);
 
         assert_eq!(game.pass_turn(), Ok(()));
-        assert_eq!(game.status(), GameStatus::Finished);
+        assert_eq!(game.status(), GameStatus::Finished(ConsecutivePasses));
     }
 
     #[test]
@@ -855,7 +856,10 @@ mod test {
         game.pass_turn().unwrap();
         game.pass_turn().unwrap();
 
-        assert_eq!(game.status(), GameStatus::Finished);
+        assert_eq!(
+            game.status(),
+            GameStatus::Finished(GameEndReason::ConsecutivePasses)
+        );
 
         let snapshot = game.current_snapshot();
         let player = game.current_player();
@@ -879,5 +883,74 @@ mod test {
 
         assert_eq!(game.current_player(), player);
         assert_eq!(game.consecutive_passes(), 2);
+    }
+
+    #[test]
+    fn test_black_resigns() {
+        let mut game = create_test_game();
+
+        assert_eq!(game.current_player(), Player::Black);
+
+        assert_eq!(game.resign(), Ok(()));
+
+        assert_eq!(
+            game.status(),
+            GameStatus::Finished(GameEndReason::Resignation {
+                resigned: Player::Black,
+                winner: Player::White,
+            })
+        );
+    }
+
+    #[test]
+    fn test_white_resigns() {
+        let mut game = create_test_game();
+
+        game.play_move(VertexId::new(0)).unwrap();
+
+        assert_eq!(game.current_player(), Player::White);
+
+        game.resign().unwrap();
+
+        assert_eq!(
+            game.status(),
+            GameStatus::Finished(GameEndReason::Resignation {
+                resigned: Player::White,
+                winner: Player::Black,
+            })
+        );
+    }
+
+    #[test]
+    fn test_resign_does_not_change_board() {
+        let mut game = create_test_game();
+
+        let snapshot = game.current_snapshot();
+
+        game.resign().unwrap();
+
+        assert_eq!(game.current_snapshot(), snapshot);
+    }
+
+    #[test]
+    fn test_cannot_resign_after_game_finished() {
+        let mut game = create_test_game();
+
+        game.resign().unwrap();
+
+        let status = game.status();
+
+        assert_eq!(game.resign(), Err(ResignError::GameOver));
+        assert_eq!(game.status(), status);
+    }
+
+    #[test]
+    fn test_cannot_resign_after_two_passes() {
+        let mut game = create_test_game();
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(game.resign(), Err(ResignError::GameOver));
     }
 }
