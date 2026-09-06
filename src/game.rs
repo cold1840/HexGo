@@ -397,6 +397,40 @@ mod test {
 
     use super::*;
 
+    #[derive(Debug, Clone, PartialEq)]
+    struct CompleteGameState {
+        board: BoardGraph,
+        snapshot: BoardSnapshot,
+        current_player: Player,
+        snapshot_history: HashSet<BoardSnapshot>,
+        consecutive_passes: u8,
+        status: GameStatus,
+        komi: f64,
+    }
+
+    fn complete_state(game: &Game) -> CompleteGameState {
+        CompleteGameState {
+            board: game.board.clone(),
+            snapshot: game.current_snapshot(),
+            current_player: game.current_player,
+            snapshot_history: game.snapshot_history.clone(),
+            consecutive_passes: game.consecutive_passes,
+            status: game.status,
+            komi: game.komi,
+        }
+    }
+
+    fn set_position(game: &mut Game, stones: &[(usize, Player)]) {
+        game.occupancy.fill(VertexState::Empty);
+
+        for &(index, player) in stones {
+            game.occupancy[index] = VertexState::Occupied(player);
+        }
+
+        game.snapshot_history.clear();
+        game.snapshot_history.insert(game.current_snapshot());
+    }
+
     fn create_test_game() -> Game {
         // 0 --- 1 --- 2
         //       |
@@ -709,6 +743,45 @@ mod test {
     }
 
     #[test]
+    fn test_move_captures_multiple_enemy_groups_and_gains_liberties() {
+        // 1(W)   2(W)
+        //     \ /
+        //      0(?) --- 3(W)
+        //
+        // The three white stones are separate groups whose only liberty is 0.
+        let board = BoardGraph::from_edges(
+            4,
+            [
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(0), VertexId::new(2)),
+                (VertexId::new(0), VertexId::new(3)),
+            ],
+        )
+        .unwrap();
+        let mut game = Game::new(board);
+        set_position(
+            &mut game,
+            &[(1, Player::White), (2, Player::White), (3, Player::White)],
+        );
+
+        assert_eq!(game.play_move(VertexId::new(0)), Ok(()));
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(0)),
+            Some(VertexState::Occupied(Player::Black))
+        );
+        for index in 1..=3 {
+            assert_eq!(
+                game.vertex_state(VertexId::new(index)),
+                Some(VertexState::Empty)
+            );
+        }
+        assert_eq!(game.liberty_count(VertexId::new(0)), Some(3));
+        assert_eq!(game.current_player(), Player::White);
+        assert_eq!(game.snapshot_history.len(), 2);
+    }
+
+    #[test]
     fn test_play_move_prevents_suicide() {
         //     4
         //     |
@@ -738,6 +811,8 @@ mod test {
         game.occupancy[2] = VertexState::Occupied(Player::White);
         game.occupancy[3] = VertexState::Occupied(Player::White);
 
+        let state_before_move = complete_state(&game);
+
         assert_eq!(game.play_move(VertexId::new(1)), Err(MoveError::Suicide));
 
         // The attempted move must be rolled back.
@@ -756,6 +831,8 @@ mod test {
                 Some(VertexState::Occupied(Player::White))
             );
         }
+
+        assert_eq!(complete_state(&game), state_before_move);
     }
 
     #[test]
@@ -848,17 +925,34 @@ mod test {
         // Black captures White at 0.
         assert_eq!(game.play_move(VertexId::new(1)), Ok(()));
 
-        let snapshot_after_capture = game.current_snapshot();
-        let history_len = game.snapshot_history.len();
+        let state_after_capture = complete_state(&game);
 
         // White tries to recapture Black at 1,
         // which would recreate the previous board snapshot.
         assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::Superko));
 
         // Illegal move must leave the state unchanged.
-        assert_eq!(game.current_snapshot(), snapshot_after_capture);
-        assert_eq!(game.current_player(), Player::White);
-        assert_eq!(game.snapshot_history.len(), history_len);
+        assert_eq!(complete_state(&game), state_after_capture);
+    }
+
+    #[test]
+    fn test_occupied_and_invalid_vertex_rejections_leave_all_state_unchanged() {
+        let board = BoardGraph::from_edges(3, [(VertexId::new(0), VertexId::new(1))]).unwrap();
+        let mut game = Game::new(board);
+
+        game.play_move(VertexId::new(0)).unwrap();
+        game.pass_turn().unwrap();
+
+        let state_before_occupied = complete_state(&game);
+        assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::Occupied));
+        assert_eq!(complete_state(&game), state_before_occupied);
+
+        let state_before_invalid = complete_state(&game);
+        assert_eq!(
+            game.play_move(VertexId::new(99)),
+            Err(MoveError::InvalidVertex)
+        );
+        assert_eq!(complete_state(&game), state_before_invalid);
     }
 
     #[test]
@@ -929,16 +1023,18 @@ mod test {
     }
 
     #[test]
-    fn test_pass_does_not_record_board_snapshot() {
+    fn test_pass_bypasses_superko_and_does_not_record_board_snapshot() {
         let mut game = create_test_game();
 
         let snapshot = game.current_snapshot();
-        let history_len = game.snapshot_history.len();
+        let history = game.snapshot_history.clone();
 
+        assert!(game.pass_turn().is_ok());
         assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.current_snapshot(), snapshot);
-        assert_eq!(game.snapshot_history.len(), history_len);
+        assert_eq!(game.snapshot_history, history);
+        assert_eq!(game.status(), GameStatus::Finished(ConsecutivePasses));
     }
 
     #[test]
@@ -986,6 +1082,21 @@ mod test {
     }
 
     #[test]
+    fn test_pass_move_pass_sequence_does_not_end_game() {
+        let board = BoardGraph::from_edges(3, [(VertexId::new(0), VertexId::new(1))]).unwrap();
+        let mut game = Game::new(board);
+
+        game.pass_turn().unwrap();
+        game.play_move(VertexId::new(0)).unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(game.status(), GameStatus::Playing);
+        assert_eq!(game.consecutive_passes(), 1);
+        assert_eq!(game.current_player(), Player::White);
+        assert_eq!(game.snapshot_history.len(), 2);
+    }
+
+    #[test]
     fn test_move_is_rejected_after_game_finished() {
         let mut game = create_test_game();
 
@@ -1019,6 +1130,24 @@ mod test {
 
         assert_eq!(game.current_player(), player);
         assert_eq!(game.consecutive_passes(), 2);
+    }
+
+    #[test]
+    fn test_all_actions_are_rejected_atomically_after_game_finished() {
+        let mut game = create_test_game();
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        let finished_state = complete_state(&game);
+
+        assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::GameOver));
+        assert_eq!(complete_state(&game), finished_state);
+
+        assert_eq!(game.pass_turn(), Err(PassError::GameOver));
+        assert_eq!(complete_state(&game), finished_state);
+
+        assert_eq!(game.resign(), Err(ResignError::GameOver));
+        assert_eq!(complete_state(&game), finished_state);
     }
 
     #[test]
@@ -1341,6 +1470,55 @@ mod test {
     }
 
     #[test]
+    fn test_score_combines_black_white_and_neutral_regions() {
+        // 0(B)-1(.)-2(B)-3(W)-4(.)-5(W)-6(B)-7(.)-8(W)
+        //      Black             White             Neutral
+        let board = BoardGraph::from_edges(
+            9,
+            [
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(1), VertexId::new(2)),
+                (VertexId::new(2), VertexId::new(3)),
+                (VertexId::new(3), VertexId::new(4)),
+                (VertexId::new(4), VertexId::new(5)),
+                (VertexId::new(5), VertexId::new(6)),
+                (VertexId::new(6), VertexId::new(7)),
+                (VertexId::new(7), VertexId::new(8)),
+            ],
+        )
+        .unwrap();
+        let mut game = Game::new(board);
+        set_position(
+            &mut game,
+            &[
+                (0, Player::Black),
+                (2, Player::Black),
+                (3, Player::White),
+                (5, Player::White),
+                (6, Player::Black),
+                (8, Player::White),
+            ],
+        );
+
+        assert_eq!(
+            game.empty_region(VertexId::new(1)).unwrap().territory(),
+            Territory::Owned(Player::Black)
+        );
+        assert_eq!(
+            game.empty_region(VertexId::new(4)).unwrap().territory(),
+            Territory::Owned(Player::White)
+        );
+        assert_eq!(
+            game.empty_region(VertexId::new(7)).unwrap().territory(),
+            Territory::Neutral
+        );
+
+        let score = game.score();
+        assert_eq!(score.black(), 4.0);
+        assert_eq!(score.white(), 4.0 + game.komi());
+    }
+
+    #[test]
     fn test_komi_is_added_only_to_white() {
         let board = BoardGraph::from_edges(1, vec![]).unwrap();
 
@@ -1415,6 +1593,83 @@ mod test {
         game.pass_turn().unwrap();
 
         assert_eq!(game.result(), Some(GameResult::Draw));
+    }
+
+    #[test]
+    fn test_komi_changes_the_final_winner() {
+        fn finished_game_with_komi(komi: f64) -> Game {
+            let board = BoardGraph::from_edges(
+                3,
+                [
+                    (VertexId::new(0), VertexId::new(1)),
+                    (VertexId::new(1), VertexId::new(2)),
+                ],
+            )
+            .unwrap();
+            let mut game = Game::new(board);
+            game.komi = komi;
+            set_position(
+                &mut game,
+                &[(0, Player::Black), (1, Player::Black), (2, Player::White)],
+            );
+            game.pass_turn().unwrap();
+            game.pass_turn().unwrap();
+            game
+        }
+
+        assert_eq!(
+            finished_game_with_komi(0.5).result(),
+            Some(GameResult::WinByScore {
+                winner: Player::Black,
+                margin: 0.5,
+            })
+        );
+        assert_eq!(
+            finished_game_with_komi(1.5).result(),
+            Some(GameResult::WinByScore {
+                winner: Player::White,
+                margin: 0.5,
+            })
+        );
+    }
+
+    #[test]
+    fn test_complete_game_from_first_move_through_scored_result() {
+        // 0(B) --- 1(B) --- 2(.) --- 3(W) --- 4(W)
+        let board = BoardGraph::from_edges(
+            5,
+            [
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(1), VertexId::new(2)),
+                (VertexId::new(2), VertexId::new(3)),
+                (VertexId::new(3), VertexId::new(4)),
+            ],
+        )
+        .unwrap();
+        let mut game = Game::new(board);
+
+        assert_eq!(game.result(), None);
+        assert_eq!(game.play_move(VertexId::new(0)), Ok(()));
+        assert_eq!(game.play_move(VertexId::new(4)), Ok(()));
+        assert_eq!(game.play_move(VertexId::new(1)), Ok(()));
+        assert_eq!(game.play_move(VertexId::new(3)), Ok(()));
+        assert_eq!(game.status(), GameStatus::Playing);
+        assert_eq!(game.snapshot_history.len(), 5);
+
+        assert_eq!(game.pass_turn(), Ok(()));
+        assert_eq!(game.status(), GameStatus::Playing);
+        assert_eq!(game.result(), None);
+
+        assert_eq!(game.pass_turn(), Ok(()));
+        assert_eq!(game.status(), GameStatus::Finished(ConsecutivePasses));
+        assert_eq!(game.score(), Score::new(2.0, 2.5));
+        assert_eq!(
+            game.result(),
+            Some(GameResult::WinByScore {
+                winner: Player::White,
+                margin: 0.5,
+            })
+        );
     }
 
     #[test]
