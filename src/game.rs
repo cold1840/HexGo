@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use crate::game::{
     board::{BoardGraph, VertexId},
     player::Player,
-    state::VertexState,
+    state::{GameStatus::Playing, *},
 };
 
 use std::collections::VecDeque;
@@ -20,6 +20,12 @@ pub enum MoveError {
     Occupied,
     Suicide,
     Superko,
+    GameOver,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PassError {
+    GameOver,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -33,6 +39,7 @@ pub struct Game {
     current_player: Player,
     snapshot_history: HashSet<BoardSnapshot>,
     consecutive_passes: u8,
+    status: GameStatus,
 }
 
 impl Game {
@@ -53,7 +60,12 @@ impl Game {
             current_player: Player::Black,
             snapshot_history,
             consecutive_passes: 0,
+            status: Playing,
         }
+    }
+
+    pub fn status(&self) -> GameStatus {
+        self.status
     }
 
     pub fn board(&self) -> &BoardGraph {
@@ -144,6 +156,10 @@ impl Game {
     }
 
     pub fn play_move(&mut self, vertex: VertexId) -> Result<(), MoveError> {
+        if self.status == GameStatus::Finished {
+            return Err(MoveError::GameOver);
+        }
+
         let Some(state) = self.vertex_state(vertex) else {
             return Err(MoveError::InvalidVertex);
         };
@@ -213,9 +229,20 @@ impl Game {
         Ok(())
     }
 
-    pub fn pass_turn(&mut self) {
+    pub fn pass_turn(&mut self) -> Result<(), PassError> {
+        if self.status == GameStatus::Finished {
+            return Err(PassError::GameOver);
+        }
+
         self.consecutive_passes += 1;
+
+        if self.consecutive_passes >= 2 {
+            self.status = GameStatus::Finished;
+        }
+
         self.current_player = self.current_player.opponent();
+
+        Ok(())
     }
 
     pub fn consecutive_passes(&self) -> u8 {
@@ -715,7 +742,7 @@ mod test {
     fn test_pass_switches_player() {
         let mut game = create_test_game();
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.current_player(), Player::White);
     }
@@ -726,11 +753,11 @@ mod test {
 
         assert_eq!(game.consecutive_passes(), 0);
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.consecutive_passes(), 1);
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.consecutive_passes(), 2);
     }
@@ -739,11 +766,11 @@ mod test {
     fn test_two_consecutive_passes() {
         let mut game = create_test_game();
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert!(!game.both_players_passed());
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert!(game.both_players_passed());
     }
@@ -755,7 +782,7 @@ mod test {
         let board = BoardGraph::from_edges(2, edges).unwrap();
         let mut game = Game::new(board);
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.consecutive_passes(), 1);
 
@@ -771,9 +798,86 @@ mod test {
         let snapshot = game.current_snapshot();
         let history_len = game.snapshot_history.len();
 
-        game.pass_turn();
+        assert!(game.pass_turn().is_ok());
 
         assert_eq!(game.current_snapshot(), snapshot);
         assert_eq!(game.snapshot_history.len(), history_len);
+    }
+
+    #[test]
+    fn test_new_game_is_playing() {
+        let game = create_test_game();
+
+        assert_eq!(game.status(), GameStatus::Playing);
+    }
+
+    #[test]
+    fn test_one_pass_does_not_finish_game() {
+        let mut game = create_test_game();
+
+        assert_eq!(game.pass_turn(), Ok(()));
+
+        assert_eq!(game.status(), GameStatus::Playing);
+        assert_eq!(game.consecutive_passes(), 1);
+    }
+
+    #[test]
+    fn test_two_consecutive_passes_finish_game() {
+        let mut game = create_test_game();
+
+        assert_eq!(game.pass_turn(), Ok(()));
+        assert_eq!(game.status(), GameStatus::Playing);
+
+        assert_eq!(game.pass_turn(), Ok(()));
+        assert_eq!(game.status(), GameStatus::Finished);
+    }
+
+    #[test]
+    fn test_move_between_passes_does_not_finish_game() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.pass_turn().unwrap();
+
+        game.play_move(VertexId::new(0)).unwrap();
+
+        game.pass_turn().unwrap();
+
+        assert_eq!(game.consecutive_passes(), 1);
+        assert_eq!(game.status(), GameStatus::Playing);
+    }
+
+    #[test]
+    fn test_move_is_rejected_after_game_finished() {
+        let mut game = create_test_game();
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        assert_eq!(game.status(), GameStatus::Finished);
+
+        let snapshot = game.current_snapshot();
+        let player = game.current_player();
+
+        assert_eq!(game.play_move(VertexId::new(0)), Err(MoveError::GameOver));
+
+        assert_eq!(game.current_snapshot(), snapshot);
+        assert_eq!(game.current_player(), player);
+    }
+
+    #[test]
+    fn test_pass_is_rejected_after_game_finished() {
+        let mut game = create_test_game();
+
+        game.pass_turn().unwrap();
+        game.pass_turn().unwrap();
+
+        let player = game.current_player();
+
+        assert_eq!(game.pass_turn(), Err(PassError::GameOver));
+
+        assert_eq!(game.current_player(), player);
+        assert_eq!(game.consecutive_passes(), 2);
     }
 }
