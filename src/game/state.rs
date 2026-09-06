@@ -6,3 +6,9 @@ pub enum VertexState {
     Empty,
     Occupied(Player),
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameStatus {
+    Playing,
+    Finished,
+}
