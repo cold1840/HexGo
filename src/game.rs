@@ -4,18 +4,18 @@ use std::collections::HashSet;
 
 use crate::game::{
     board::{BoardGraph, VertexId},
-    empty_region::*,
     error::*,
     player::Player,
+    region::*,
     state::{GameStatus::Playing, *},
 };
 
 use std::collections::VecDeque;
 
 pub mod board;
-pub mod empty_region;
 pub mod error;
 pub mod player;
+pub mod region;
 pub mod state;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
