@@ -1,5 +1,12 @@
 #![allow(dead_code)]
 
+pub mod board;
+pub mod error;
+pub mod player;
+pub mod region;
+pub mod score;
+pub mod state;
+
 use std::collections::HashSet;
 
 use crate::game::{
@@ -7,16 +14,13 @@ use crate::game::{
     error::*,
     player::Player,
     region::*,
+    score::Score,
     state::{GameStatus::Playing, *},
 };
 
 use std::collections::VecDeque;
 
-pub mod board;
-pub mod error;
-pub mod player;
-pub mod region;
-pub mod state;
+const DEFAULT_KOMI: f64 = 0.5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BoardSnapshot {
@@ -30,6 +34,7 @@ pub struct Game {
     snapshot_history: HashSet<BoardSnapshot>,
     consecutive_passes: u8,
     status: GameStatus,
+    komi: f64,
 }
 
 impl Game {
@@ -51,6 +56,7 @@ impl Game {
             snapshot_history,
             consecutive_passes: 0,
             status: Playing,
+            komi: DEFAULT_KOMI,
         }
     }
 
@@ -70,6 +76,10 @@ impl Game {
         BoardSnapshot {
             occupancy: self.occupancy.clone(),
         }
+    }
+
+    pub fn komi(&self) -> f64 {
+        self.komi
     }
 
     pub fn vertex_state(&self, id: VertexId) -> Option<VertexState> {
@@ -312,6 +322,37 @@ impl Game {
         }
 
         regions
+    }
+
+    pub fn score(&self) -> Score {
+        let mut black = 0.0;
+        let mut white = 0.0;
+
+        for vertex in self.board().vertices() {
+            match self.vertex_state(vertex) {
+                Some(VertexState::Occupied(Player::Black)) => black += 1.0,
+                Some(VertexState::Occupied(Player::White)) => white += 1.0,
+                _ => {}
+            }
+        }
+
+        for region in self.all_empty_regions() {
+            let size = region.vertices().len() as f64;
+
+            match region.territory() {
+                Territory::Owned(Player::Black) => {
+                    black += size;
+                }
+
+                Territory::Owned(Player::White) => {
+                    white += size;
+                }
+
+                Territory::Neutral => {}
+            }
+        }
+
+        Score::new(black, white + self.komi)
     }
 }
 
@@ -1169,5 +1210,112 @@ mod test {
         }
 
         assert!(game.all_empty_regions().is_empty());
+    }
+
+    #[test]
+    fn test_score_counts_stones() {
+        // 0(B) --- 1(W)
+
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[1] = VertexState::Occupied(Player::White);
+
+        let score = game.score();
+
+        assert_eq!(score.black(), 1.0);
+        assert_eq!(score.white(), 1.0 + game.komi());
+    }
+
+    #[test]
+    fn test_score_counts_black_territory() {
+        // 0(B) --- 1(.) --- 2(B)
+
+        let board = BoardGraph::from_edges(
+            3,
+            vec![
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(1), VertexId::new(2)),
+            ],
+        )
+        .unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[2] = VertexState::Occupied(Player::Black);
+
+        let score = game.score();
+
+        // 2 black stones + vertex 1 territory
+        assert_eq!(score.black(), 3.0);
+        assert_eq!(score.white(), game.komi());
+    }
+
+    #[test]
+    fn test_score_counts_white_territory() {
+        // 0(W) --- 1(.) --- 2(W)
+
+        let board = BoardGraph::from_edges(
+            3,
+            vec![
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(1), VertexId::new(2)),
+            ],
+        )
+        .unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::White);
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+
+        let score = game.score();
+
+        assert_eq!(score.black(), 0.0);
+
+        // 2 white stones + 1 territory + komi
+        assert_eq!(score.white(), 3.0 + game.komi());
+    }
+
+    #[test]
+    fn test_neutral_region_does_not_score() {
+        // 0(B) --- 1(.) --- 2(W)
+
+        let board = BoardGraph::from_edges(
+            3,
+            vec![
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(1), VertexId::new(2)),
+            ],
+        )
+        .unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+
+        let score = game.score();
+
+        // vertex 1 touches both colors, so it is neutral.
+        assert_eq!(score.black(), 1.0);
+        assert_eq!(score.white(), 1.0 + game.komi());
+    }
+
+    #[test]
+    fn test_komi_is_added_only_to_white() {
+        let board = BoardGraph::from_edges(1, vec![]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        let score = game.score();
+
+        assert_eq!(score.black(), 1.0);
+        assert_eq!(score.white(), game.komi());
     }
 }
