@@ -17,7 +17,10 @@ use crate::{
 };
 
 const SIDEBAR_WIDTH: f32 = 300.0;
+const MOBILE_PANEL_HEIGHT: f32 = 232.0;
+const MOBILE_BREAKPOINT: f32 = 800.0;
 const BOARD_PADDING: f32 = 72.0;
+const MOBILE_BOARD_PADDING: f32 = 28.0;
 const HIT_RADIUS: f32 = 0.46;
 const BOARD_BACKGROUND: Color = Color::srgb(0.84, 0.69, 0.39);
 const PANEL_BACKGROUND: Color = Color::srgb(0.17, 0.13, 0.09);
@@ -39,6 +42,8 @@ impl Plugin for HexGoUiPlugin {
             .add_systems(
                 Update,
                 (
+                    layout_control_panel,
+                    layout_mobile_content,
                     fit_board_to_window,
                     update_pointer_target,
                     handle_pointer_place,
@@ -61,15 +66,25 @@ impl Plugin for HexGoUiPlugin {
 }
 
 pub fn primary_window() -> Window {
+    let resize_constraints = if cfg!(target_os = "android") {
+        WindowResizeConstraints {
+            min_width: 1.0,
+            min_height: 1.0,
+            ..default()
+        }
+    } else {
+        WindowResizeConstraints {
+            min_width: 360.0,
+            min_height: 480.0,
+            ..default()
+        }
+    };
+
     Window {
         title: "HexGo".into(),
         resolution: WindowResolution::new(1280, 800),
-        resize_constraints: WindowResizeConstraints {
-            min_width: 1000.0,
-            min_height: 700.0,
-            ..default()
-        },
-        resizable: true,
+        resize_constraints,
+        resizable: !cfg!(target_os = "android"),
         ..default()
     }
 }
@@ -122,6 +137,14 @@ struct UiState {
 #[derive(Component)]
 struct BoardRoot;
 
+#[derive(Debug, Clone, Copy, Component)]
+enum ResponsiveElement {
+    ControlPanel,
+    DesktopOnly,
+    StatusGroup,
+    ActionGroup,
+}
+
 #[derive(Component)]
 struct Stone(VertexId);
 
@@ -154,6 +177,13 @@ struct ModalOverlay;
 
 #[derive(Component)]
 struct ModalText;
+
+#[derive(Debug, Clone, Copy, Component)]
+enum AdaptiveContent {
+    Feedback,
+    Result,
+    ModalDialog,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 enum ButtonAction {
@@ -246,6 +276,8 @@ fn setup(
 
 fn load_cjk_font(fonts: &mut Assets<Font>) -> Handle<Font> {
     const CANDIDATES: &[&str] = &[
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+        "/system/fonts/NotoSansSC-Regular.otf",
         "/usr/share/fonts/adobe-source-han-sans/SourceHanSansCN-Regular.otf",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/wenquanyi/wqy-zenhei/wqy-zenhei.ttc",
@@ -267,6 +299,7 @@ fn load_cjk_font(fonts: &mut Assets<Font>) -> Handle<Font> {
 fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
     commands
         .spawn((
+            ResponsiveElement::ControlPanel,
             Node {
                 position_type: PositionType::Absolute,
                 right: px(0),
@@ -281,22 +314,43 @@ fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
             BackgroundColor(PANEL_BACKGROUND),
         ))
         .with_children(|panel| {
-            panel.spawn(text_bundle("HEXGO", font, 31.0, TEXT_COLOR));
-            panel.spawn(text_bundle("本地双人对局", font, 16.0, MUTED_TEXT));
-            panel.spawn((Node {
-                height: px(16),
-                ..default()
-            },));
             panel.spawn((
-                CurrentPlayerText,
-                text_bundle("当前执子：黑方", font, 23.0, TEXT_COLOR),
+                ResponsiveElement::DesktopOnly,
+                text_bundle("HEXGO", font, 31.0, TEXT_COLOR),
             ));
             panel.spawn((
-                PassCountText,
-                text_bundle("连续停着：0 / 2", font, 17.0, MUTED_TEXT),
+                ResponsiveElement::DesktopOnly,
+                text_bundle("本地双人对局", font, 16.0, MUTED_TEXT),
             ));
+            panel.spawn((
+                ResponsiveElement::DesktopOnly,
+                Node {
+                    height: px(16),
+                    ..default()
+                },
+            ));
+            panel
+                .spawn((
+                    ResponsiveElement::StatusGroup,
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(16),
+                        ..default()
+                    },
+                ))
+                .with_children(|status| {
+                    status.spawn((
+                        CurrentPlayerText,
+                        text_bundle("当前执子：黑方", font, 23.0, TEXT_COLOR),
+                    ));
+                    status.spawn((
+                        PassCountText,
+                        text_bundle("连续停着：0 / 2", font, 17.0, MUTED_TEXT),
+                    ));
+                });
             panel.spawn((
                 FeedbackText,
+                AdaptiveContent::Feedback,
                 text_bundle("请选择一个交点落子", font, 16.0, MUTED_TEXT),
                 Node {
                     min_height: px(52),
@@ -304,12 +358,25 @@ fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
                     ..default()
                 },
             ));
-            panel.spawn(action_button(ButtonAction::Pass, "停着", font));
-            panel.spawn(action_button(ButtonAction::Resign, "认输", font));
-            panel.spawn(action_button(ButtonAction::Restart, "重新开始", font));
+            panel
+                .spawn((
+                    ResponsiveElement::ActionGroup,
+                    Node {
+                        width: percent(100),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(16),
+                        ..default()
+                    },
+                ))
+                .with_children(|actions| {
+                    actions.spawn(action_button(ButtonAction::Pass, "停着", font));
+                    actions.spawn(action_button(ButtonAction::Resign, "认输", font));
+                    actions.spawn(action_button(ButtonAction::Restart, "重新开始", font));
+                });
             panel
                 .spawn((
                     ResultPanel,
+                    AdaptiveContent::Result,
                     Node {
                         display: Display::None,
                         width: percent(100),
@@ -332,15 +399,21 @@ fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
                         },
                     ));
                 });
-            panel.spawn((Node {
-                flex_grow: 1.0,
-                ..default()
-            },));
-            panel.spawn(text_bundle(
-                "Tab 切换区域 · 方向键选择 · Enter 确认",
-                font,
-                13.0,
-                MUTED_TEXT,
+            panel.spawn((
+                ResponsiveElement::DesktopOnly,
+                Node {
+                    flex_grow: 1.0,
+                    ..default()
+                },
+            ));
+            panel.spawn((
+                ResponsiveElement::DesktopOnly,
+                text_bundle(
+                    "Tab 切换区域 · 方向键选择 · Enter 确认",
+                    font,
+                    13.0,
+                    MUTED_TEXT,
+                ),
             ));
         });
 }
@@ -366,8 +439,10 @@ fn spawn_modal(commands: &mut Commands, font: &Handle<Font>) {
         .with_children(|overlay| {
             overlay
                 .spawn((
+                    AdaptiveContent::ModalDialog,
                     Node {
-                        width: px(410),
+                        width: percent(90),
+                        max_width: px(410),
                         padding: UiRect::all(px(28)),
                         flex_direction: FlexDirection::Column,
                         row_gap: px(18),
@@ -411,6 +486,7 @@ fn action_button(action: ButtonAction, label: &str, font: &Handle<Font>) -> impl
         action,
         Node {
             width: percent(100),
+            flex_grow: 1.0,
             height: px(48),
             padding: UiRect::horizontal(px(16)),
             align_items: AlignItems::Center,
@@ -425,20 +501,162 @@ fn action_button(action: ButtonAction, label: &str, font: &Handle<Font>) -> impl
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ResponsiveLayout {
+    panel_on_bottom: bool,
+    board_size: Vec2,
+    board_center: Vec2,
+}
+
+fn responsive_layout(window_size: Vec2) -> ResponsiveLayout {
+    let panel_on_bottom = window_size.x < MOBILE_BREAKPOINT || window_size.x < window_size.y;
+    if panel_on_bottom {
+        let panel_height = MOBILE_PANEL_HEIGHT.min(window_size.y * 0.42);
+        ResponsiveLayout {
+            panel_on_bottom,
+            board_size: Vec2::new(
+                (window_size.x - MOBILE_BOARD_PADDING * 2.0).max(1.0),
+                (window_size.y - panel_height - MOBILE_BOARD_PADDING * 2.0).max(1.0),
+            ),
+            board_center: Vec2::new(0.0, panel_height * 0.5),
+        }
+    } else {
+        ResponsiveLayout {
+            panel_on_bottom,
+            board_size: Vec2::new(
+                (window_size.x - SIDEBAR_WIDTH - BOARD_PADDING * 2.0).max(1.0),
+                (window_size.y - BOARD_PADDING * 2.0).max(1.0),
+            ),
+            board_center: Vec2::new(-SIDEBAR_WIDTH * 0.5, 0.0),
+        }
+    }
+}
+
+fn screen_position_is_on_board(window_size: Vec2, position: Vec2) -> bool {
+    let layout = responsive_layout(window_size);
+    if layout.panel_on_bottom {
+        position.y < window_size.y - MOBILE_PANEL_HEIGHT.min(window_size.y * 0.42)
+    } else {
+        position.x < window_size.x - SIDEBAR_WIDTH
+    }
+}
+
+fn vertex_at_screen_position(
+    position: Vec2,
+    window: &Window,
+    camera: (&Camera, &GlobalTransform),
+    root: &Transform,
+    definition: &BoardDefinition,
+) -> Option<VertexId> {
+    let window_size = Vec2::new(window.width(), window.height());
+    if !screen_position_is_on_board(window_size, position) {
+        return None;
+    }
+    let world = camera.0.viewport_to_world_2d(camera.1, position).ok()?;
+    let local = (world - root.translation.xy()) / root.scale.x;
+    nearest_vertex(definition, local, HIT_RADIUS)
+}
+
+fn layout_control_panel(
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut elements: Query<(&ResponsiveElement, &mut Node)>,
+) {
+    let layout = responsive_layout(Vec2::new(window.width(), window.height()));
+    for (element, mut node) in &mut elements {
+        match (element, layout.panel_on_bottom) {
+            (ResponsiveElement::ControlPanel, true) => {
+                node.left = px(0);
+                node.right = Val::Auto;
+                node.top = Val::Auto;
+                node.bottom = px(0);
+                node.width = percent(100);
+                node.height = px(MOBILE_PANEL_HEIGHT.min(window.height() * 0.42));
+                node.padding = UiRect::all(px(14));
+                node.row_gap = px(8);
+            }
+            (ResponsiveElement::ControlPanel, false) => {
+                node.left = Val::Auto;
+                node.right = px(0);
+                node.top = px(0);
+                node.bottom = Val::Auto;
+                node.width = px(SIDEBAR_WIDTH);
+                node.height = percent(100);
+                node.padding = UiRect::all(px(28));
+                node.row_gap = px(16);
+            }
+            (ResponsiveElement::DesktopOnly, is_mobile) => {
+                node.display = if is_mobile {
+                    Display::None
+                } else {
+                    Display::Flex
+                };
+            }
+            (ResponsiveElement::StatusGroup, true) => {
+                node.flex_direction = FlexDirection::Row;
+                node.justify_content = JustifyContent::SpaceBetween;
+                node.row_gap = px(0);
+            }
+            (ResponsiveElement::StatusGroup, false) => {
+                node.flex_direction = FlexDirection::Column;
+                node.justify_content = JustifyContent::FlexStart;
+                node.row_gap = px(16);
+            }
+            (ResponsiveElement::ActionGroup, true) => {
+                node.flex_direction = FlexDirection::Row;
+                node.column_gap = px(8);
+                node.row_gap = px(0);
+            }
+            (ResponsiveElement::ActionGroup, false) => {
+                node.flex_direction = FlexDirection::Column;
+                node.column_gap = px(0);
+                node.row_gap = px(16);
+            }
+        }
+    }
+}
+
+fn layout_mobile_content(
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut content: Query<(&AdaptiveContent, &mut Node)>,
+) {
+    let is_mobile = responsive_layout(Vec2::new(window.width(), window.height())).panel_on_bottom;
+    for (kind, mut node) in &mut content {
+        match (kind, is_mobile) {
+            (AdaptiveContent::Feedback, true) => {
+                node.min_height = px(32);
+                node.margin = UiRect::ZERO;
+            }
+            (AdaptiveContent::Feedback, false) => {
+                node.min_height = px(52);
+                node.margin = UiRect::vertical(px(8));
+            }
+            (AdaptiveContent::Result, true) => {
+                node.margin = UiRect::top(px(4));
+                node.padding = UiRect::all(px(8));
+            }
+            (AdaptiveContent::Result, false) => {
+                node.margin = UiRect::top(px(14));
+                node.padding = UiRect::all(px(16));
+            }
+            (AdaptiveContent::ModalDialog, true) => node.padding = UiRect::all(px(20)),
+            (AdaptiveContent::ModalDialog, false) => node.padding = UiRect::all(px(28)),
+        }
+    }
+}
+
 fn fit_board_to_window(
     window: Single<&Window, With<PrimaryWindow>>,
     session: Res<SessionResource>,
     mut root: Single<&mut Transform, With<BoardRoot>>,
 ) {
-    let board_width = (window.width() - SIDEBAR_WIDTH - BOARD_PADDING * 2.0).max(1.0);
-    let board_height = (window.height() - BOARD_PADDING * 2.0).max(1.0);
+    let layout = responsive_layout(Vec2::new(window.width(), window.height()));
     let (min, max) = session.0.definition().bounds();
     let extent = Vec2::new(max[0] - min[0], max[1] - min[1]);
-    let scale = (board_width / extent.x)
-        .min(board_height / extent.y)
-        .max(1.0);
+    let scale = (layout.board_size.x / extent.x)
+        .min(layout.board_size.y / extent.y)
+        .max(0.01);
     root.scale = Vec3::splat(scale);
-    root.translation = Vec3::new(-SIDEBAR_WIDTH * 0.5, 0.0, 0.0);
+    root.translation = layout.board_center.extend(0.0);
 }
 
 fn update_pointer_target(
@@ -456,16 +674,7 @@ fn update_pointer_target(
         ui.hovered = None;
         return;
     };
-    if cursor.x >= window.width() - SIDEBAR_WIDTH {
-        ui.hovered = None;
-        return;
-    }
-    let Ok(world) = camera.0.viewport_to_world_2d(camera.1, cursor) else {
-        ui.hovered = None;
-        return;
-    };
-    let local = (world - root.translation.xy()) / root.scale.x;
-    ui.hovered = nearest_vertex(session.0.definition(), local, HIT_RADIUS);
+    ui.hovered = vertex_at_screen_position(cursor, &window, *camera, &root, session.0.definition());
 }
 
 fn nearest_vertex(definition: &BoardDefinition, position: Vec2, radius: f32) -> Option<VertexId> {
@@ -483,13 +692,33 @@ fn nearest_vertex(definition: &BoardDefinition, position: Vec2, radius: f32) -> 
 
 fn handle_pointer_place(
     mouse: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
+    root: Single<&Transform, With<BoardRoot>>,
     mut session: ResMut<SessionResource>,
     mut ui: ResMut<UiState>,
 ) {
-    if mouse.just_pressed(MouseButton::Left)
-        && ui.modal.is_none()
-        && let Some(vertex) = ui.hovered
-    {
+    if ui.modal.is_some() {
+        return;
+    }
+
+    let touched_vertex = touches.iter_just_pressed().find_map(|touch| {
+        vertex_at_screen_position(
+            touch.position(),
+            &window,
+            *camera,
+            &root,
+            session.0.definition(),
+        )
+    });
+    let vertex = touched_vertex.or_else(|| {
+        (mouse.just_pressed(MouseButton::Left) && !touches.any_just_pressed())
+            .then_some(ui.hovered)
+            .flatten()
+    });
+
+    if let Some(vertex) = vertex {
         ui.focus = FocusTarget::Board;
         ui.focused_vertex = Some(vertex);
         submit_command(&mut session.0, &mut ui, SessionCommand::Place(vertex));
@@ -766,18 +995,55 @@ fn sync_pass_count(
 }
 
 fn sync_result(
+    window: Single<&Window, With<PrimaryWindow>>,
     session: Res<SessionResource>,
     mut result_panel: Single<&mut Node, With<ResultPanel>>,
     mut result_text: Single<&mut Text, With<ResultText>>,
 ) {
     if let Some(result) = session.0.result() {
         result_panel.display = Display::Flex;
-        let value = result_summary(&session.0, result);
+        let is_mobile =
+            responsive_layout(Vec2::new(window.width(), window.height())).panel_on_bottom;
+        let value = if is_mobile {
+            compact_result_summary(&session.0, result)
+        } else {
+            result_summary(&session.0, result)
+        };
         if result_text.0 != value {
             result_text.0 = value;
         }
     } else {
         result_panel.display = Display::None;
+    }
+}
+
+fn compact_result_summary(session: &LocalGameSession, result: GameResult) -> String {
+    match result {
+        GameResult::WinByResignation { winner } => {
+            format!("对局结果：{}因对方认输获胜", player_name(winner))
+        }
+        GameResult::WinByScore { winner, margin } => {
+            let score = session.score_breakdown();
+            format!(
+                "对局结果：{}胜 {:.1} 目\n黑方 {:.1}（棋 {} / 地 {}）\n白方 {:.1}（棋 {} / 地 {} / 贴 {:.1}）",
+                player_name(winner),
+                margin,
+                score.black_total,
+                score.black_stones,
+                score.black_territory,
+                score.white_total,
+                score.white_stones,
+                score.white_territory,
+                score.komi,
+            )
+        }
+        GameResult::Draw => {
+            let score = session.score_breakdown();
+            format!(
+                "对局结果：和棋\n黑方总分：{:.1} · 白方总分：{:.1}",
+                score.black_total, score.white_total
+            )
+        }
     }
 }
 
@@ -914,6 +1180,41 @@ mod tests {
     }
 
     #[test]
+    fn responsive_layout_keeps_wide_controls_beside_the_board() {
+        let layout = responsive_layout(Vec2::new(1280.0, 800.0));
+
+        assert!(!layout.panel_on_bottom);
+        assert_eq!(layout.board_center, Vec2::new(-SIDEBAR_WIDTH * 0.5, 0.0));
+        assert_eq!(
+            layout.board_size,
+            Vec2::new(
+                1280.0 - SIDEBAR_WIDTH - BOARD_PADDING * 2.0,
+                800.0 - BOARD_PADDING * 2.0,
+            )
+        );
+    }
+
+    #[test]
+    fn responsive_layout_reserves_a_bottom_panel_for_portrait_screens() {
+        let window_size = Vec2::new(480.0, 800.0);
+        let layout = responsive_layout(window_size);
+
+        assert!(layout.panel_on_bottom);
+        assert_eq!(
+            layout.board_center,
+            Vec2::new(0.0, MOBILE_PANEL_HEIGHT * 0.5)
+        );
+        assert!(screen_position_is_on_board(
+            window_size,
+            Vec2::new(240.0, 200.0)
+        ));
+        assert!(!screen_position_is_on_board(
+            window_size,
+            Vec2::new(240.0, 700.0)
+        ));
+    }
+
+    #[test]
     fn directional_navigation_moves_and_stops_at_the_boundary() {
         let definition = BoardDefinition::compact();
         let start = VertexId::new(0);
@@ -971,5 +1272,8 @@ mod tests {
         let summary = result_summary(&session, session.result().unwrap());
 
         assert!(summary.lines().all(|line| line.chars().count() <= 14));
+
+        let compact_summary = compact_result_summary(&session, session.result().unwrap());
+        assert!(compact_summary.lines().count() <= 3);
     }
 }

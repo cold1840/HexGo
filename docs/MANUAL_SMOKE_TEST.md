@@ -21,6 +21,14 @@ Run `cargo run`, then complete this checklist before submitting a change that af
 4. Play a short capture sequence. Captured stones must disappear immediately after the engine accepts the move.
 5. Attempt suicide and positional-superko moves when suitable positions are available. Each rejected move must leave the board and turn unchanged and show the matching error.
 
+## Narrow and Touch Layout
+
+1. Resize the window below 800 logical pixels wide or to portrait orientation. Confirm that the controls move below the board, the three action buttons share one row, and desktop-only headings and keyboard help are hidden.
+2. Confirm that the board remains centered and fully visible above the bottom panel without overlapping it.
+3. On a touch-capable device, tap several empty intersections and confirm that each tap places exactly one stone at the nearest intersection.
+4. Tap the bottom-panel actions and confirm that the tap does not also place a stone on the board.
+5. End a game and confirm that the compact result summary fits in the bottom panel. Return to a wide landscape window and confirm that the detailed result card returns.
+
 ## Keyboard Play
 
 1. Press `Tab` until the board is focused. Move through intersections with all four arrow keys and place a stone with `Enter` or `Space`.

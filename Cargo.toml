@@ -3,5 +3,9 @@ name = "HexGo"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "hex_go"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
-bevy = "0.19.1"
+bevy = { version = "0.19.1", features = ["android-game-activity"] }
