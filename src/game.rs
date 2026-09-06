@@ -290,6 +290,29 @@ impl Game {
 
         Some(EmptyRegion::new(vertices, bordering_players))
     }
+
+    pub fn all_empty_regions(&self) -> Vec<EmptyRegion> {
+        let mut regions = Vec::new();
+        let mut visited = HashSet::new();
+
+        for vertex in self.board().vertices() {
+            if visited.contains(&vertex) {
+                continue;
+            }
+
+            let Some(region) = self.empty_region(vertex) else {
+                continue;
+            };
+
+            for &region_vertex in region.vertices() {
+                visited.insert(region_vertex);
+            }
+
+            regions.push(region);
+        }
+
+        regions
+    }
 }
 
 #[cfg(test)]
@@ -1054,5 +1077,97 @@ mod test {
         let game = create_test_game();
 
         assert_eq!(game.empty_region(VertexId::new(100)), None);
+    }
+
+    #[test]
+    fn test_all_empty_board_has_one_region() {
+        let edges = vec![
+            (VertexId::new(0), VertexId::new(1)),
+            (VertexId::new(1), VertexId::new(2)),
+        ];
+
+        let board = BoardGraph::from_edges(3, edges).unwrap();
+        let game = Game::new(board);
+
+        let regions = game.all_empty_regions();
+
+        assert_eq!(regions.len(), 1);
+        assert_eq!(regions[0].vertices().len(), 3);
+    }
+
+    #[test]
+    fn test_multiple_empty_regions() {
+        // 0(.) --- 1(.)
+        //
+        // 2(B)
+        //
+        // 3(.) --- 4(.)
+        let edges = vec![
+            (VertexId::new(0), VertexId::new(1)),
+            (VertexId::new(1), VertexId::new(2)),
+            (VertexId::new(2), VertexId::new(3)),
+            (VertexId::new(3), VertexId::new(4)),
+        ];
+
+        let board = BoardGraph::from_edges(5, edges).unwrap();
+        let mut game = Game::new(board);
+
+        game.occupancy[2] = VertexState::Occupied(Player::Black);
+
+        let regions = game.all_empty_regions();
+
+        assert_eq!(regions.len(), 2);
+    }
+
+    #[test]
+    fn test_empty_regions_exclude_occupied_vertices() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[4] = VertexState::Occupied(Player::White);
+
+        let regions = game.all_empty_regions();
+
+        for region in &regions {
+            assert!(!region.vertices().contains(&VertexId::new(0)));
+            assert!(!region.vertices().contains(&VertexId::new(4)));
+        }
+    }
+
+    #[test]
+    fn test_each_empty_vertex_appears_once() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        let regions = game.all_empty_regions();
+
+        let mut vertices = Vec::new();
+
+        for region in &regions {
+            vertices.extend_from_slice(region.vertices());
+        }
+
+        vertices.sort_unstable();
+
+        let expected = vec![
+            VertexId::new(1),
+            VertexId::new(2),
+            VertexId::new(3),
+            VertexId::new(4),
+        ];
+
+        assert_eq!(vertices, expected);
+    }
+
+    #[test]
+    fn test_full_board_has_no_empty_regions() {
+        let mut game = create_test_game();
+
+        for index in 0..game.board().vertex_count() {
+            game.occupancy[index] = VertexState::Occupied(Player::Black);
+        }
+
+        assert!(game.all_empty_regions().is_empty());
     }
 }
