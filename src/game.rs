@@ -39,10 +39,6 @@ impl Game {
             return None;
         }
 
-        if self.occupancy.len() <= id.index() {
-            return None;
-        }
-
         Some(self.occupancy[id.index()])
     }
 }
@@ -54,7 +50,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_new_board() {
+    fn test_new_game() {
         let edges = vec![
             (VertexId::new(0), VertexId::new(1)),
             (VertexId::new(0), VertexId::new(2)),
@@ -68,11 +64,11 @@ mod test {
         let board = res.unwrap();
 
         let game = Game::new(board);
-        assert_eq!(game.current_player, Player::Black);
+        assert_eq!(game.current_player(), Player::Black);
 
-        for vextex in game.board().vertices() {
+        for vertex in game.board().vertices() {
             assert!(
-                game.vertex_state(vextex)
+                game.vertex_state(vertex)
                     .is_some_and(|state| state == VertexState::Empty)
             );
         }
