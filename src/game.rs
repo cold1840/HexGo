@@ -100,6 +100,16 @@ impl Game {
     pub fn has_liberty(&self, start: VertexId) -> Option<bool> {
         Some(!self.liberties(start)?.is_empty())
     }
+
+    pub fn remove_group(&mut self, start: VertexId) -> Option<Vec<VertexId>> {
+        let gruop = self.group(start)?;
+
+        for vertex in gruop.iter() {
+            self.occupancy[vertex.index()] = VertexState::Empty;
+        }
+
+        Some(gruop)
+    }
 }
 
 #[cfg(test)]
@@ -243,5 +253,93 @@ mod test {
         assert_eq!(game.liberty_count(VertexId::new(0)), None);
 
         assert_eq!(game.has_liberty(VertexId::new(0)), None);
+    }
+
+    #[test]
+    fn test_remove_group() {
+        let mut game = create_test_game();
+
+        // 0(B) --- 1(B) --- 2(W)
+        //           |
+        //          3(B) --- 4(W)
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[1] = VertexState::Occupied(Player::Black);
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+        game.occupancy[3] = VertexState::Occupied(Player::Black);
+        game.occupancy[4] = VertexState::Occupied(Player::White);
+
+        let removed = game.remove_group(VertexId::new(0)).unwrap();
+
+        assert_eq!(removed.len(), 3);
+
+        assert!(removed.contains(&VertexId::new(0)));
+        assert!(removed.contains(&VertexId::new(1)));
+        assert!(removed.contains(&VertexId::new(3)));
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(0)),
+            Some(VertexState::Empty)
+        );
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(1)),
+            Some(VertexState::Empty)
+        );
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(3)),
+            Some(VertexState::Empty)
+        );
+
+        // White stones should not be removed accidentally.
+        assert_eq!(
+            game.vertex_state(VertexId::new(2)),
+            Some(VertexState::Occupied(Player::White))
+        );
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(4)),
+            Some(VertexState::Occupied(Player::White))
+        );
+    }
+
+    #[test]
+    fn test_remove_single_vertex_group() {
+        let mut game = create_test_game();
+
+        game.occupancy[2] = VertexState::Occupied(Player::White);
+
+        let removed = game.remove_group(VertexId::new(2)).unwrap();
+
+        assert_eq!(removed, vec![VertexId::new(2)]);
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(2)),
+            Some(VertexState::Empty)
+        );
+    }
+
+    #[test]
+    fn test_remove_empty_vertex() {
+        let mut game = create_test_game();
+
+        let removed = game.remove_group(VertexId::new(0));
+
+        assert_eq!(removed, None);
+
+        assert_eq!(
+            game.vertex_state(VertexId::new(0)),
+            Some(VertexState::Empty)
+        );
+    }
+
+    #[test]
+    fn test_remove_invalid_vertex() {
+        let mut game = create_test_game();
+
+        let removed = game.remove_group(VertexId::new(100));
+
+        assert_eq!(removed, None);
     }
 }
