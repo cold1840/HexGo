@@ -6,7 +6,7 @@
 
 HexGo 是一种在正六边形铺砖顶点上进行的新型围棋类游戏。普通内部交点只有三个邻居，而标准围棋通常有四个，因此棋子的连接、气、提子、死活和领地都会呈现不同的拓扑特征。
 
-项目目前处于初始开发阶段。游戏规则已经确定，可玩程序当前只会启动一个最小的 Bevy 应用。
+项目已包含确定性的规则引擎和基于 Bevy 的本地双人界面。第二阶段的可用性工作仍在继续，首个可玩棋盘预设暂未最终定稿。
 
 ## 核心规则摘要
 
@@ -44,6 +44,8 @@ git switch -c feat/your-change
 cargo run
 ```
 
+本地对局支持鼠标落子和完整键盘控制。使用 `Tab` 在棋盘与操作按钮之间切换，使用方向键选择交点，使用 `Enter` 或 `Space` 激活当前选择。完整交互检查见[手工冒烟测试](docs/MANUAL_SMOKE_TEST.zh-CN.md)。
+
 禁止直接向 `main` 提交。
 
 ## 质量检查
@@ -69,6 +71,7 @@ pre-commit run --all-files
 - [游戏规则](docs/RULES.zh-CN.md) ([English](docs/RULES.md))
 - [架构](docs/ARCHITECTURE.zh-CN.md) ([English](docs/ARCHITECTURE.md))
 - [路线图](docs/ROADMAP.zh-CN.md) ([English](docs/ROADMAP.md))
+- [手工冒烟测试](docs/MANUAL_SMOKE_TEST.zh-CN.md) ([English](docs/MANUAL_SMOKE_TEST.md))
 - [贡献指南](CONTRIBUTING.zh-CN.md) ([English](CONTRIBUTING.md))
 - [行为准则](CODE_OF_CONDUCT.zh-CN.md) ([English](CODE_OF_CONDUCT.md))
 - [安全策略](SECURITY.zh-CN.md) ([English](SECURITY.md))
