@@ -1,6 +1,7 @@
 use std::fs;
 
 use bevy::{
+    input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
     window::{PrimaryWindow, WindowResizeConstraints, WindowResolution},
 };
@@ -30,6 +31,22 @@ const MUTED_TEXT: Color = Color::srgb(0.82, 0.72, 0.55);
 const ACCENT: Color = Color::srgb(0.84, 0.61, 0.23);
 const WARNING: Color = Color::srgb(0.78, 0.30, 0.21);
 const ERROR: Color = Color::srgb(0.89, 0.38, 0.31);
+const RULES_SCROLL_LINE: f32 = 28.0;
+const RULES_SUMMARY: &str = "基本规则\n\
+\n\
+1. 黑方先行，双方轮流在棋盘交点落子。只有棋盘连线直接相连的交点才算相邻。\n\
+\n\
+2. 相连的同色棋子组成棋串。棋串相邻的空交点称为气；没有气的棋串会被提掉。\n\
+\n\
+3. 落子时先提掉相邻且无气的敌方棋串，再检查己方棋串。落子后己方仍无气属于自杀，禁止落子。\n\
+\n\
+4. 全局同形禁着：落子后的棋盘不得与本局此前出现过的任何棋盘局面相同。\n\
+\n\
+5. 每回合也可以停着或认输。停着永远合法；连续两次停着后，对局立即结束。\n\
+\n\
+6. 对局结束时采用面积计分：棋子数加己方围住的空点数；白方另加贴目。双方都接触的空域不计分。\n\
+\n\
+7. 结束时仍在棋盘上的棋子一律视为活棋。若有应被提掉的棋子，请继续落子，不要停着。";
 
 pub struct HexGoUiPlugin;
 
@@ -49,6 +66,7 @@ impl Plugin for HexGoUiPlugin {
                     handle_pointer_place,
                     handle_keyboard,
                     handle_buttons,
+                    scroll_rules,
                     sync_stones,
                     sync_preview,
                     sync_focus_marker,
@@ -58,6 +76,7 @@ impl Plugin for HexGoUiPlugin {
                     sync_result,
                     sync_feedback,
                     sync_modal,
+                    sync_rules_modal,
                     style_buttons,
                 )
                     .chain(),
@@ -99,15 +118,17 @@ enum FocusTarget {
     Pass,
     Resign,
     Restart,
+    Rules,
 }
 
 impl FocusTarget {
     fn next(self, reverse: bool) -> Self {
-        const ORDER: [FocusTarget; 4] = [
+        const ORDER: [FocusTarget; 5] = [
             FocusTarget::Board,
             FocusTarget::Pass,
             FocusTarget::Resign,
             FocusTarget::Restart,
+            FocusTarget::Rules,
         ];
         let index = ORDER
             .iter()
@@ -122,6 +143,7 @@ impl FocusTarget {
 enum ModalKind {
     Resign,
     Restart,
+    Rules,
 }
 
 #[derive(Resource, Default)]
@@ -178,6 +200,15 @@ struct ModalOverlay;
 #[derive(Component)]
 struct ModalText;
 
+#[derive(Component)]
+struct RulesOverlay;
+
+#[derive(Component)]
+struct RulesScroll;
+
+#[derive(Component)]
+struct RulesScrollStart(Vec2);
+
 #[derive(Debug, Clone, Copy, Component)]
 enum AdaptiveContent {
     Feedback,
@@ -190,8 +221,10 @@ enum ButtonAction {
     Pass,
     Resign,
     Restart,
+    Rules,
     Confirm,
     Cancel,
+    CloseRules,
 }
 
 #[derive(Resource)]
@@ -272,6 +305,7 @@ fn setup(
     commands.insert_resource(stone_materials);
     spawn_sidebar(&mut commands, &font);
     spawn_modal(&mut commands, &font);
+    spawn_rules_modal(&mut commands, &font);
 }
 
 fn load_cjk_font(fonts: &mut Assets<Font>) -> Handle<Font> {
@@ -372,6 +406,7 @@ fn spawn_sidebar(commands: &mut Commands, font: &Handle<Font>) {
                     actions.spawn(action_button(ButtonAction::Pass, "停着", font));
                     actions.spawn(action_button(ButtonAction::Resign, "认输", font));
                     actions.spawn(action_button(ButtonAction::Restart, "重新开始", font));
+                    actions.spawn(action_button(ButtonAction::Rules, "游戏规则", font));
                 });
             panel
                 .spawn((
@@ -467,6 +502,98 @@ fn spawn_modal(commands: &mut Commands, font: &Handle<Font>) {
         });
 }
 
+fn spawn_rules_modal(commands: &mut Commands, font: &Handle<Font>) {
+    commands
+        .spawn((
+            RulesOverlay,
+            Node {
+                display: Display::None,
+                position_type: PositionType::Absolute,
+                left: px(0),
+                top: px(0),
+                width: percent(100),
+                height: percent(100),
+                padding: UiRect::all(px(20)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            GlobalZIndex(100),
+            BackgroundColor(Color::srgba(0.08, 0.055, 0.03, 0.82)),
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        width: percent(100),
+                        max_width: px(640),
+                        height: percent(88),
+                        max_height: px(680),
+                        padding: UiRect::all(px(24)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(16),
+                        border_radius: BorderRadius::all(px(12)),
+                        ..default()
+                    },
+                    BackgroundColor(PANEL_BACKGROUND),
+                ))
+                .with_children(|dialog| {
+                    dialog.spawn(text_bundle("游戏规则", font, 27.0, TEXT_COLOR));
+                    let mut scroll = dialog.spawn((
+                        RulesScroll,
+                        RulesScrollStart(Vec2::ZERO),
+                        ScrollPosition::default(),
+                        Interaction::default(),
+                        Pickable {
+                            is_hoverable: false,
+                            should_block_lower: true,
+                        },
+                        Node {
+                            width: percent(100),
+                            flex_grow: 1.0,
+                            overflow: Overflow::scroll_y(),
+                            padding: UiRect::right(px(10)),
+                            ..default()
+                        },
+                    ));
+                    scroll.observe(
+                        |drag: On<Pointer<Drag>>,
+                         ui_scale: Res<UiScale>,
+                         mut scroll: Single<
+                            (&mut ScrollPosition, &RulesScrollStart, &ComputedNode),
+                            With<RulesScroll>,
+                        >| {
+                            let max_offset = (scroll.2.content_size().y - scroll.2.size().y)
+                                .max(0.0)
+                                * scroll.2.inverse_scale_factor;
+                            scroll.0.y = (scroll.1.0.y - drag.distance.y / ui_scale.0)
+                                .clamp(0.0, max_offset);
+                        },
+                    );
+                    scroll.observe(
+                        |_: On<Pointer<DragStart>>,
+                         mut scroll: Single<
+                            (&ComputedNode, &mut RulesScrollStart),
+                            With<RulesScroll>,
+                        >| {
+                            scroll.1.0 = scroll.0.scroll_position * scroll.0.inverse_scale_factor;
+                        },
+                    );
+                    scroll.with_children(|content| {
+                        content
+                            .spawn(text_bundle(RULES_SUMMARY, font, 16.0, TEXT_COLOR))
+                            .insert(TextLayout::new(Justify::Left, LineBreak::AnyCharacter))
+                            .insert(Pickable::IGNORE)
+                            .insert(Node {
+                                width: percent(100),
+                                ..default()
+                            });
+                    });
+                    dialog.spawn(rules_close_button(font));
+                });
+        });
+}
+
 fn text_bundle(text: &str, font: &Handle<Font>, size: f32, color: Color) -> impl Bundle {
     (
         Text::new(text),
@@ -498,6 +625,27 @@ fn action_button(action: ButtonAction, label: &str, font: &Handle<Font>) -> impl
         BorderColor::all(Color::NONE),
         BackgroundColor(Color::srgb(0.35, 0.25, 0.16)),
         children![text_bundle(label, font, 17.0, TEXT_COLOR)],
+    )
+}
+
+fn rules_close_button(font: &Handle<Font>) -> impl Bundle {
+    (
+        Button,
+        ButtonAction::CloseRules,
+        Node {
+            width: percent(100),
+            height: px(48),
+            flex_shrink: 0.0,
+            padding: UiRect::horizontal(px(16)),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border: UiRect::all(px(2)),
+            border_radius: BorderRadius::all(px(8)),
+            ..default()
+        },
+        BorderColor::all(Color::NONE),
+        BackgroundColor(Color::srgb(0.35, 0.25, 0.16)),
+        children![text_bundle("关闭", font, 17.0, TEXT_COLOR)],
     )
 }
 
@@ -776,6 +924,7 @@ fn handle_keyboard(
             FocusTarget::Pass => submit_command(&mut session.0, &mut ui, SessionCommand::Pass),
             FocusTarget::Resign => request_resign(&session.0, &mut ui),
             FocusTarget::Restart => ui.modal = Some(ModalKind::Restart),
+            FocusTarget::Rules => open_rules(&mut ui),
             FocusTarget::Board => {}
         }
     }
@@ -832,15 +981,24 @@ fn handle_buttons(
                 ui.focus = FocusTarget::Restart;
                 ui.modal = Some(ModalKind::Restart);
             }
+            ButtonAction::Rules if ui.modal.is_none() => {
+                ui.focus = FocusTarget::Rules;
+                open_rules(&mut ui);
+            }
             ButtonAction::Confirm => {
                 if let Some(modal) = ui.modal {
                     confirm_modal(&mut session.0, &mut ui, modal);
                 }
             }
             ButtonAction::Cancel => ui.modal = None,
+            ButtonAction::CloseRules => ui.modal = None,
             _ => {}
         }
     }
+}
+
+fn open_rules(ui: &mut UiState) {
+    ui.modal = Some(ModalKind::Rules);
 }
 
 fn request_resign(session: &LocalGameSession, ui: &mut UiState) {
@@ -857,7 +1015,42 @@ fn confirm_modal(session: &mut LocalGameSession, ui: &mut UiState, modal: ModalK
     match modal {
         ModalKind::Resign => submit_command(session, ui, SessionCommand::Resign),
         ModalKind::Restart => submit_command(session, ui, SessionCommand::Restart),
+        ModalKind::Rules => {}
     }
+}
+
+fn scroll_rules(
+    mut mouse_wheel: MessageReader<MouseWheel>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    ui: Res<UiState>,
+    mut scroll: Single<(&mut ScrollPosition, &ComputedNode), With<RulesScroll>>,
+) {
+    if ui.modal != Some(ModalKind::Rules) {
+        mouse_wheel.clear();
+        return;
+    }
+
+    let wheel_delta = mouse_wheel.read().fold(0.0, |total, event| {
+        let scale = match event.unit {
+            MouseScrollUnit::Line => RULES_SCROLL_LINE,
+            MouseScrollUnit::Pixel => 1.0,
+        };
+        total - event.y * scale
+    });
+    let keyboard_delta = if keyboard.just_pressed(KeyCode::ArrowDown) {
+        RULES_SCROLL_LINE
+    } else if keyboard.just_pressed(KeyCode::ArrowUp) {
+        -RULES_SCROLL_LINE
+    } else if keyboard.just_pressed(KeyCode::PageDown) {
+        scroll.1.size().y * 0.8
+    } else if keyboard.just_pressed(KeyCode::PageUp) {
+        -scroll.1.size().y * 0.8
+    } else {
+        0.0
+    };
+    let max_offset =
+        (scroll.1.content_size().y - scroll.1.size().y).max(0.0) * scroll.1.inverse_scale_factor;
+    scroll.0.y = (scroll.0.y + wheel_delta + keyboard_delta).clamp(0.0, max_offset);
 }
 
 fn submit_command(session: &mut LocalGameSession, ui: &mut UiState, command: SessionCommand) {
@@ -1123,7 +1316,24 @@ fn sync_modal(
                 text.0 = value.into();
             }
         }
+        Some(ModalKind::Rules) => overlay.display = Display::None,
         None => overlay.display = Display::None,
+    }
+}
+
+fn sync_rules_modal(
+    ui: Res<UiState>,
+    mut overlay: Single<&mut Node, With<RulesOverlay>>,
+    mut scroll: Single<&mut ScrollPosition, With<RulesScroll>>,
+) {
+    let is_open = ui.modal == Some(ModalKind::Rules);
+    overlay.display = if is_open {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    if ui.is_changed() && is_open {
+        scroll.0 = Vec2::ZERO;
     }
 }
 
@@ -1144,7 +1354,8 @@ fn style_buttons(
             ButtonAction::Pass => ui.focus == FocusTarget::Pass,
             ButtonAction::Resign => ui.focus == FocusTarget::Resign,
             ButtonAction::Restart => ui.focus == FocusTarget::Restart,
-            ButtonAction::Confirm | ButtonAction::Cancel => false,
+            ButtonAction::Rules => ui.focus == FocusTarget::Rules,
+            ButtonAction::Confirm | ButtonAction::Cancel | ButtonAction::CloseRules => false,
         };
         background.0 = if disabled {
             Color::srgb(0.23, 0.17, 0.12)
@@ -1230,7 +1441,22 @@ mod tests {
     #[test]
     fn focus_cycle_is_reversible() {
         assert_eq!(FocusTarget::Board.next(false), FocusTarget::Pass);
-        assert_eq!(FocusTarget::Board.next(true), FocusTarget::Restart);
+        assert_eq!(FocusTarget::Board.next(true), FocusTarget::Rules);
+        assert_eq!(FocusTarget::Rules.next(false), FocusTarget::Board);
+    }
+
+    #[test]
+    fn rules_can_be_opened_without_changing_the_game() {
+        let session = LocalGameSession::compact();
+        let current_player = session.current_player();
+        let mut ui = UiState::default();
+
+        open_rules(&mut ui);
+
+        assert_eq!(ui.modal, Some(ModalKind::Rules));
+        assert_eq!(session.current_player(), current_player);
+        assert!(RULES_SUMMARY.contains("全局同形禁着"));
+        assert!(RULES_SUMMARY.contains("连续两次停着"));
     }
 
     #[test]
