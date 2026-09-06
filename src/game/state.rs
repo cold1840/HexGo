@@ -10,5 +10,10 @@ pub enum VertexState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameStatus {
     Playing,
-    Finished,
+    Finished(GameEndReason),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameEndReason {
+    ConsecutivePasses,
+    Resignation { resigned: Player, winner: Player },
 }
