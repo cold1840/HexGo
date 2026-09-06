@@ -90,7 +90,7 @@ impl BoardGraph {
 
     pub fn are_adjacent(&self, left: VertexId, right: VertexId) -> bool {
         self.get_neighbors(left)
-            .is_some_and(|neighbors| neighbors.binary_search(&right).is_ok())
+            .is_some_and(|neighbors| neighbors.contains(&right))
     }
 
     pub fn vertices(&self) -> impl ExactSizeIterator<Item = VertexId> {
