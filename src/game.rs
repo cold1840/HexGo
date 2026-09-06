@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use crate::game::{
     board::{BoardGraph, VertexId},
+    empty_region::*,
     error::*,
     player::Player,
     state::{GameStatus::Playing, *},
@@ -12,6 +13,7 @@ use crate::game::{
 use std::collections::VecDeque;
 
 pub mod board;
+pub mod empty_region;
 pub mod error;
 pub mod player;
 pub mod state;
@@ -252,6 +254,41 @@ impl Game {
 
     pub fn both_players_passed(&self) -> bool {
         self.consecutive_passes >= 2
+    }
+
+    pub fn empty_region(&self, start: VertexId) -> Option<EmptyRegion> {
+        if self.vertex_state(start)? != VertexState::Empty {
+            return None;
+        }
+
+        let mut vertices = Vec::new();
+        let mut bordering_players = HashSet::new();
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        visited.insert(start);
+        queue.push_back(start);
+
+        while let Some(current) = queue.pop_front() {
+            vertices.push(current);
+
+            for &neighbor in self.board().get_neighbors(current)? {
+                match self.vertex_state(neighbor)? {
+                    VertexState::Empty => {
+                        if visited.insert(neighbor) {
+                            queue.push_back(neighbor);
+                        }
+                    }
+
+                    VertexState::Occupied(player) => {
+                        bordering_players.insert(player);
+                    }
+                }
+            }
+        }
+
+        Some(EmptyRegion::new(vertices, bordering_players))
     }
 }
 
@@ -952,5 +989,70 @@ mod test {
         game.pass_turn().unwrap();
 
         assert_eq!(game.resign(), Err(ResignError::GameOver));
+    }
+
+    #[test]
+    fn test_single_vertex_empty_region() {
+        let board = BoardGraph::from_edges(2, vec![(VertexId::new(0), VertexId::new(1))]).unwrap();
+
+        let mut game = Game::new(board);
+
+        game.occupancy[1] = VertexState::Occupied(Player::Black);
+
+        let region = game.empty_region(VertexId::new(0)).unwrap();
+
+        assert_eq!(region.vertices().len(), 1);
+        assert!(region.vertices().contains(&VertexId::new(0)));
+
+        assert_eq!(region.bordering_players().len(), 1);
+        assert!(region.bordering_players().contains(&Player::Black));
+    }
+
+    #[test]
+    fn test_connected_empty_region() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[4] = VertexState::Occupied(Player::Black);
+
+        let region = game.empty_region(VertexId::new(1)).unwrap();
+
+        assert_eq!(region.vertices().len(), 3);
+
+        for id in [1, 2, 3] {
+            assert!(region.vertices().contains(&VertexId::new(id)));
+        }
+        assert_eq!(region.bordering_players().len(), 1);
+        assert!(region.bordering_players().contains(&Player::Black));
+    }
+
+    #[test]
+    fn test_empty_region_with_mixed_border() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+        game.occupancy[4] = VertexState::Occupied(Player::White);
+
+        let region = game.empty_region(VertexId::new(1)).unwrap();
+
+        assert_eq!(region.bordering_players().len(), 2);
+        assert!(region.bordering_players().contains(&Player::Black));
+        assert!(region.bordering_players().contains(&Player::White));
+    }
+
+    #[test]
+    fn test_empty_region_on_occupied_vertex() {
+        let mut game = create_test_game();
+
+        game.occupancy[0] = VertexState::Occupied(Player::Black);
+
+        assert_eq!(game.empty_region(VertexId::new(0)), None);
+    }
+
+    #[test]
+    fn test_empty_region_invalid_vertex() {
+        let game = create_test_game();
+
+        assert_eq!(game.empty_region(VertexId::new(100)), None);
     }
 }
