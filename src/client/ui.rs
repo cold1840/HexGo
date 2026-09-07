@@ -9,6 +9,7 @@ const TEXT_COLOR: Color = Color::srgb(1.0, 0.96, 0.89);
 pub const MUTED_TEXT: Color = Color::srgb(0.82, 0.72, 0.55);
 pub const SIDEBAR_WIDTH: f32 = 300.0;
 const PANEL_BACKGROUND: Color = Color::srgb(0.17, 0.13, 0.09);
+const BUTTON_BACKGROUND: Color = Color::srgb(0.35, 0.25, 0.16);
 pub const ACCENT: Color = Color::srgb(0.84, 0.61, 0.23);
 // pub const WARNING: Color = Color::srgb(0.78, 0.30, 0.21);
 pub const ERROR: Color = Color::srgb(0.89, 0.38, 0.31);
@@ -107,7 +108,7 @@ fn action_button(action: ButtonAction, label: &str, font: &Handle<Font>) -> impl
             ..default()
         },
         BorderColor::all(Color::NONE),
-        BackgroundColor(Color::srgb(0.35, 0.25, 0.16)),
+        BackgroundColor(BUTTON_BACKGROUND),
         children![text_bundle(label, font, 17.0, TEXT_COLOR)],
     )
 }

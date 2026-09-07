@@ -1,7 +1,10 @@
-use super::layout;
+use crate::client::layout;
 use crate::{
     board_layout::BoardDefinition,
-    client::{FocusTarget, ModalKind, SessionResource, UiState, board::BoardRoot},
+    client::{
+        FocusTarget, ModalKind, SessionResource, UiState, board::BoardRoot, confirm_modal,
+        open_rules, request_resign, submit_command,
+    },
     game::board::VertexId,
     session::SessionCommand,
 };
@@ -102,7 +105,7 @@ pub(super) fn handle_pointer_place(
     if let Some(vertex) = vertex {
         ui.focus = FocusTarget::Board;
         ui.focused_vertex = Some(vertex);
-        super::submit_command(&mut session.0, &mut ui, SessionCommand::Place(vertex));
+        submit_command(&mut session.0, &mut ui, SessionCommand::Place(vertex));
     }
 }
 
@@ -115,7 +118,7 @@ pub(super) fn handle_keyboard(
         if keyboard.just_pressed(KeyCode::Escape) {
             ui.modal = None;
         } else if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
-            super::confirm_modal(&mut session.0, &mut ui, modal);
+            confirm_modal(&mut session.0, &mut ui, modal);
         }
         return;
     }
@@ -150,16 +153,14 @@ pub(super) fn handle_keyboard(
         if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
             let vertex = ui.focused_vertex.unwrap_or(VertexId::new(0));
             ui.focused_vertex = Some(vertex);
-            super::submit_command(&mut session.0, &mut ui, SessionCommand::Place(vertex));
+            submit_command(&mut session.0, &mut ui, SessionCommand::Place(vertex));
         }
     } else if keyboard.just_pressed(KeyCode::Enter) || keyboard.just_pressed(KeyCode::Space) {
         match ui.focus {
-            FocusTarget::Pass => {
-                super::submit_command(&mut session.0, &mut ui, SessionCommand::Pass)
-            }
-            FocusTarget::Resign => super::request_resign(&session.0, &mut ui),
+            FocusTarget::Pass => submit_command(&mut session.0, &mut ui, SessionCommand::Pass),
+            FocusTarget::Resign => request_resign(&session.0, &mut ui),
             FocusTarget::Restart => ui.modal = Some(ModalKind::Restart),
-            FocusTarget::Rules => super::open_rules(&mut ui),
+            FocusTarget::Rules => open_rules(&mut ui),
             FocusTarget::Board => {}
         }
     }
@@ -205,23 +206,23 @@ pub(super) fn handle_buttons(
         match action {
             ButtonAction::Pass if ui.modal.is_none() => {
                 ui.focus = FocusTarget::Pass;
-                super::submit_command(&mut session.0, &mut ui, SessionCommand::Pass);
+                submit_command(&mut session.0, &mut ui, SessionCommand::Pass);
             }
             ButtonAction::Resign if ui.modal.is_none() => {
                 ui.focus = FocusTarget::Resign;
-                super::request_resign(&session.0, &mut ui);
+                request_resign(&session.0, &mut ui);
             }
             ButtonAction::Restart if ui.modal.is_none() => {
                 ui.focus = FocusTarget::Restart;
-                ui.modal = Some(super::ModalKind::Restart);
+                ui.modal = Some(ModalKind::Restart);
             }
             ButtonAction::Rules if ui.modal.is_none() => {
                 ui.focus = FocusTarget::Rules;
-                super::open_rules(&mut ui);
+                open_rules(&mut ui);
             }
             ButtonAction::Confirm => {
                 if let Some(modal) = ui.modal {
-                    super::confirm_modal(&mut session.0, &mut ui, modal);
+                    confirm_modal(&mut session.0, &mut ui, modal);
                 }
             }
             ButtonAction::Cancel => ui.modal = None,
@@ -233,7 +234,13 @@ pub(super) fn handle_buttons(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use bevy::math::Vec2;
+
+    use crate::{
+        board_layout::BoardDefinition,
+        client::input::{HIT_RADIUS, navigate_vertex, nearest_vertex},
+        game::board::VertexId,
+    };
 
     #[test]
     fn pointer_hit_testing_uses_the_nearest_vertex() {
