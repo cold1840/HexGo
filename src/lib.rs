@@ -1,18 +1,19 @@
 use bevy::prelude::*;
 
-pub mod board_layout;
-pub mod game;
-pub mod session;
-pub mod ui;
+mod board_layout;
+mod client;
+mod game;
+mod session;
+mod window;
 
 /// Builds the HexGo application without starting its event loop.
 pub fn build_app() -> App {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(ui::primary_window()),
+        primary_window: Some(window::primary_window()),
         ..default()
     }))
-    .add_plugins(ui::HexGoUiPlugin);
+    .add_plugins(client::ClientPlugin);
     app
 }
 
