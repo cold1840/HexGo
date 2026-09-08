@@ -1,0 +1,64 @@
+name: Build Linux
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++ \
+            pkg-config \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-0 \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libpipewire-0.3-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Package Linux release
+        run: |
+          mkdir -p dist/HexGo
+          cp target/release/HexGo dist/HexGo/
+          cp -R assets dist/HexGo/
+          cd dist
+          zip -r HexGo-linux-x86_64.zip HexGo
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/HexGo-linux-x86_64.zip
+          if-no-files-found: error
+

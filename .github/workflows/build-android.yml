@@ -1,0 +1,70 @@
+name: Build Android
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-android:
+    name: Build Android arm64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@cargo-ndk
+
+      - name: Build Android native library
+        run: |
+          cargo ndk \
+            --target arm64-v8a \
+            --output android/app/src/main/jniLibs \
+            build --release --verbose --lib
+
+      - name: Restore Android signing files
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PROPERTIES: ${{ secrets.ANDROID_KEYSTORE_PROPERTIES }}
+        run: |
+          mkdir -p android/keystore
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/keystore/hexgo-release.jks
+          printf '%s\n' "$KEYSTORE_PROPERTIES" > android/keystore.properties
+
+      - name: Build signed release APK
+        working-directory: android
+        run: ./gradlew -Dorg.gradle.java.home="$JAVA_HOME" assembleRelease
+
+      - name: Package Android release
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk \
+            dist/HexGo-android-arm64.apk
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/HexGo-android-arm64.apk
+          if-no-files-found: error

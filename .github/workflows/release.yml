@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    uses: ./.github/workflows/build-linux.yml
+
+  build-windows:
+    uses: ./.github/workflows/build-windows.yml
+
+  build-macos:
+    uses: ./.github/workflows/build-macos.yml
+
+  build-android:
+    uses: ./.github/workflows/build-android.yml
+    secrets: inherit
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+      - build-android
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: artifacts
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: artifacts
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos
+          path: artifacts
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: artifacts
+
+      - name: Generate SHA256 checksums
+        working-directory: artifacts
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: artifacts/*
