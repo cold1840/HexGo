@@ -9,3 +9,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 bevy = { version = "0.19.1", features = ["android-game-activity"] }
+
+[package.metadata.android]
+version-code = 1

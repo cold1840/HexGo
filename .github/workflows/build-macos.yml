@@ -1,0 +1,44 @@
+name: Build macOS
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos:
+    name: Build macOS arm64
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Package macOS release
+        run: |
+          mkdir -p dist/HexGo
+          cp target/release/HexGo dist/HexGo/
+          cp -R assets dist/HexGo/
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/HexGo dist/HexGo-macos-arm64.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/HexGo-macos-arm64.zip
+          if-no-files-found: error
+
