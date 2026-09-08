@@ -34,7 +34,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-ndk
-        uses: taiki-e/install-action@cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
 
       - name: Build Android native library
         run: |
