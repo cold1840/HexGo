@@ -1,13 +1,15 @@
-use crate::client::layout;
+use crate::client::ui::RulesScroll;
+use crate::client::{RULES_SCROLL_LINE, error_message, layout};
+use crate::game::state::GameStatus;
+use crate::session::{LocalGameSession, SessionError};
 use crate::{
     board_layout::BoardDefinition,
-    client::{
-        FocusTarget, ModalKind, SessionResource, UiState, board::BoardRoot, confirm_modal,
-        open_rules, request_resign, submit_command,
-    },
+    client::{FocusTarget, ModalKind, SessionResource, UiState, board::BoardRoot, submit_command},
     game::board::VertexId,
     session::SessionCommand,
 };
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
+use bevy::input::touch::TouchPhase;
 use bevy::{prelude::*, window::PrimaryWindow};
 
 pub(super) const HIT_RADIUS: f32 = 0.46;
@@ -232,15 +234,108 @@ pub(super) fn handle_buttons(
     }
 }
 
+fn open_rules(ui: &mut UiState) {
+    ui.modal = Some(ModalKind::Rules);
+}
+
+fn request_resign(session: &LocalGameSession, ui: &mut UiState) {
+    if session.status() == GameStatus::Playing {
+        ui.modal = Some(ModalKind::Resign);
+    } else {
+        ui.feedback_is_error = true;
+        ui.feedback = error_message(SessionError::GameOver).into();
+    }
+}
+
+fn confirm_modal(session: &mut LocalGameSession, ui: &mut UiState, modal: ModalKind) {
+    ui.modal = None;
+    match modal {
+        ModalKind::Resign => submit_command(session, ui, SessionCommand::Resign),
+        ModalKind::Restart => submit_command(session, ui, SessionCommand::Restart),
+        ModalKind::Rules => {}
+    }
+}
+
+pub(super) fn scroll_rules(
+    mut mouse_wheel: MessageReader<MouseWheel>,
+    mut touch_input: MessageReader<TouchInput>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
+    ui: Res<UiState>,
+    mut scroll: Single<(&mut ScrollPosition, &ComputedNode), With<RulesScroll>>,
+) {
+    if ui.modal != Some(ModalKind::Rules) {
+        mouse_wheel.clear();
+        touch_input.clear();
+        return;
+    }
+
+    let wheel_delta = mouse_wheel.read().fold(0.0, |total, event| {
+        let scale = match event.unit {
+            MouseScrollUnit::Line => RULES_SCROLL_LINE,
+            MouseScrollUnit::Pixel => 1.0,
+        };
+        total - event.y * scale
+    });
+    let keyboard_delta = if keyboard.just_pressed(KeyCode::ArrowDown) {
+        RULES_SCROLL_LINE
+    } else if keyboard.just_pressed(KeyCode::ArrowUp) {
+        -RULES_SCROLL_LINE
+    } else if keyboard.just_pressed(KeyCode::PageDown) {
+        scroll.1.size().y * 0.8
+    } else if keyboard.just_pressed(KeyCode::PageUp) {
+        -scroll.1.size().y * 0.8
+    } else {
+        0.0
+    };
+    let has_touch_move = touch_input
+        .read()
+        .any(|event| event.phase == TouchPhase::Moved);
+    let touch_delta = if has_touch_move {
+        touches.iter().map(|touch| -touch.delta().y).sum::<f32>()
+    } else {
+        0.0
+    };
+    scroll.0.y = clamped_scroll_position(
+        scroll.0.y,
+        wheel_delta + keyboard_delta + touch_delta,
+        scroll.1.content_size().y,
+        scroll.1.size().y,
+        scroll.1.inverse_scale_factor,
+    );
+}
+
+fn clamped_scroll_position(
+    current: f32,
+    delta: f32,
+    content_size: f32,
+    visible_size: f32,
+    inverse_scale_factor: f32,
+) -> f32 {
+    let max_offset = (content_size - visible_size).max(0.0) * inverse_scale_factor;
+    (current + delta).clamp(0.0, max_offset)
+}
+
 #[cfg(test)]
 mod tests {
-    use bevy::math::Vec2;
-
+    use super::*;
     use crate::{
         board_layout::BoardDefinition,
         client::input::{HIT_RADIUS, navigate_vertex, nearest_vertex},
+        client::ui::rules_summary,
         game::board::VertexId,
     };
+    use bevy::math::Vec2;
+
+    #[test]
+    fn upward_touch_motion_scrolls_rules_down_within_bounds() {
+        assert_eq!(clamped_scroll_position(0.0, 48.0, 600.0, 300.0, 1.0), 48.0);
+        assert_eq!(
+            clamped_scroll_position(280.0, 48.0, 600.0, 300.0, 1.0),
+            300.0
+        );
+        assert_eq!(clamped_scroll_position(20.0, -48.0, 600.0, 300.0, 1.0), 0.0);
+    }
 
     #[test]
     fn pointer_hit_testing_uses_the_nearest_vertex() {
@@ -269,5 +364,33 @@ mod tests {
 
         let left = navigate_vertex(&definition, start, Vec2::NEG_X).unwrap();
         assert_eq!(left, start);
+    }
+
+    #[test]
+    fn rules_can_be_opened_without_changing_the_game() {
+        let session = LocalGameSession::compact();
+        let current_player = session.current_player();
+        let mut ui = UiState::default();
+
+        open_rules(&mut ui);
+
+        assert_eq!(ui.modal, Some(ModalKind::Rules));
+        assert_eq!(session.current_player(), current_player);
+        assert!(rules_summary::SUMMARY.contains("全局同形禁着"));
+        assert!(rules_summary::SUMMARY.contains("连续两次停着"));
+    }
+
+    #[test]
+    fn resignation_confirmation_is_not_opened_after_game_over() {
+        let mut session = LocalGameSession::compact();
+        session.submit(SessionCommand::Pass).unwrap();
+        session.submit(SessionCommand::Pass).unwrap();
+        let mut ui = UiState::default();
+
+        request_resign(&session, &mut ui);
+
+        assert_eq!(ui.modal, None);
+        assert!(ui.feedback_is_error);
+        assert_eq!(ui.feedback, error_message(SessionError::GameOver));
     }
 }

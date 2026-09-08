@@ -3,7 +3,7 @@ use std::fs;
 
 use crate::client::input::ButtonAction;
 
-mod rules_summary;
+pub mod rules_summary;
 
 const TEXT_COLOR: Color = Color::srgb(1.0, 0.96, 0.89);
 pub const MUTED_TEXT: Color = Color::srgb(0.82, 0.72, 0.55);
@@ -403,10 +403,6 @@ pub fn setup_ui(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        client::{ModalKind, UiState, open_rules},
-        session::LocalGameSession,
-    };
 
     #[test]
     fn rules_text_keeps_its_full_height_inside_the_scroll_view() {
@@ -414,19 +410,5 @@ mod tests {
 
         assert_eq!(node.width, percent(100));
         assert_eq!(node.flex_shrink, 0.0);
-    }
-
-    #[test]
-    fn rules_can_be_opened_without_changing_the_game() {
-        let session = LocalGameSession::compact();
-        let current_player = session.current_player();
-        let mut ui = UiState::default();
-
-        open_rules(&mut ui);
-
-        assert_eq!(ui.modal, Some(ModalKind::Rules));
-        assert_eq!(session.current_player(), current_player);
-        assert!(rules_summary::SUMMARY.contains("全局同形禁着"));
-        assert!(rules_summary::SUMMARY.contains("连续两次停着"));
     }
 }

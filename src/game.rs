@@ -152,7 +152,7 @@ impl Game {
         Some(!self.liberties(start)?.is_empty())
     }
 
-    pub fn remove_group(&mut self, start: VertexId) -> Option<Vec<VertexId>> {
+    fn remove_group(&mut self, start: VertexId) -> Option<Vec<VertexId>> {
         let gruop = self.group(start)?;
 
         for vertex in gruop.iter() {
