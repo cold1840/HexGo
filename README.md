@@ -46,6 +46,10 @@ cargo run
 
 The local game supports pointer placement and full keyboard control. Use `Tab` to move between the board and actions, the arrow keys to select an intersection, and `Enter` or `Space` to activate the current selection. See the [manual smoke test](docs/MANUAL_SMOKE_TEST.md) for the complete interaction checklist.
 
+## Web Deployment
+
+The repository includes a root-level [`vercel.json`](vercel.json) that installs the pinned Trunk version, builds the WebAssembly release, and publishes the generated `dist/` directory. Import the repository into Vercel and keep the project root at the repository root. Vercel will then create preview deployments for branch pushes and production deployments for pushes to the configured production branch.
+
 Do not commit directly to `main`.
 
 ## Quality Checks
