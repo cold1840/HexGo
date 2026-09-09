@@ -44,7 +44,7 @@ jobs:
             --target arm64-v8a \
             --platform 31 \
             --output-dir android/app/src/main/jniLibs \
-            build --release --verbose --lib
+            build --profile dist --verbose --lib
 
       - name: Restore Android signing files
         env:

@@ -25,7 +25,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release --verbose
+        run: cargo build --profile dist --verbose
 
       - name: Package Windows release
         shell: pwsh
