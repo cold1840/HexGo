@@ -25,14 +25,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release --verbose
+        run: cargo build --profile dist --verbose
 
       - name: Package Windows release
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/HexGo | Out-Null
           Copy-Item target/release/HexGo.exe dist/HexGo/
-          Copy-Item -Recurse assets dist/HexGo/
           Compress-Archive `
             -Path dist/HexGo `
             -DestinationPath dist/HexGo-windows-x86_64.zip
@@ -43,4 +42,3 @@ jobs:
           name: windows
           path: dist/HexGo-windows-x86_64.zip
           if-no-files-found: error
-

@@ -48,7 +48,9 @@ The local game supports pointer placement and full keyboard control. Use `Tab` t
 
 ## Web Deployment
 
-The repository includes a root-level [`vercel.json`](vercel.json) that installs the pinned Trunk version, builds the WebAssembly release, and publishes the generated `dist/` directory. Import the repository into Vercel and keep the project root at the repository root. Vercel will then create preview deployments for branch pushes and production deployments for pushes to the configured production branch.
+The repository includes a root-level [`vercel.json`](vercel.json) that downloads a checksum-verified, pinned Trunk binary, builds the WebAssembly release, and publishes it through Vercel's Build Output API. Import the repository into Vercel and keep the project root at the repository root. Vercel will then create preview deployments for branch pushes and production deployments for pushes to the configured production branch.
+
+Successful remote builds cache the Trunk binary, Cargo registry data, and WebAssembly release artifacts. The first build for a project or branch still compiles Bevy, while later builds can reuse that work. Redeploying without the existing build cache forces a cold build.
 
 Do not commit directly to `main`.
 
