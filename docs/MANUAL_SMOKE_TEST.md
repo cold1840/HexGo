@@ -23,6 +23,8 @@ Run `cargo run`, then complete this checklist before submitting a change that af
 
 ## Narrow and Touch Layout
 
+For the web build, run `trunk serve` and open the displayed URL. Check desktop (1280×800) and phone (360×640 and 390×844) viewports, resize without reloading, and rotate the phone. The canvas must follow the browser viewport, including changes to the mobile browser toolbar, without stretching the board or offsetting pointer input. Status labels must wrap on narrow screens.
+
 1. Resize the window below 800 logical pixels wide or to portrait orientation. Confirm that the controls move below the board, the four action buttons form a fully visible two-by-two grid, and desktop-only headings and keyboard help are hidden.
 2. Confirm that the board remains centered and fully visible above the bottom panel without overlapping it.
 3. On a touch-capable device, tap several empty intersections and confirm that each tap places exactly one stone at the nearest intersection.
