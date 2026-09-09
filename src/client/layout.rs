@@ -83,11 +83,15 @@ pub fn layout_control_panel(
             }
             (ResponsiveElement::StatusGroup, true) => {
                 node.flex_direction = FlexDirection::Row;
+                node.flex_wrap = FlexWrap::Wrap;
+                node.column_gap = px(8);
                 node.justify_content = JustifyContent::SpaceBetween;
                 node.row_gap = px(0);
             }
             (ResponsiveElement::StatusGroup, false) => {
                 node.flex_direction = FlexDirection::Column;
+                node.flex_wrap = FlexWrap::NoWrap;
+                node.column_gap = px(0);
                 node.justify_content = JustifyContent::FlexStart;
                 node.row_gap = px(16);
             }
@@ -226,6 +230,58 @@ mod tests {
             window_size,
             Vec2::new(240.0, 700.0)
         ));
+    }
+
+    #[test]
+    fn controls_follow_viewport_changes_without_restarting() {
+        let mut app = App::new();
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), PrimaryWindow))
+            .id();
+        let panel = app
+            .world_mut()
+            .spawn((ResponsiveElement::ControlPanel, Node::default()))
+            .id();
+        let status = app
+            .world_mut()
+            .spawn((ResponsiveElement::StatusGroup, Node::default()))
+            .id();
+        app.add_systems(Update, layout_control_panel);
+
+        for (width, height, mobile) in [
+            (1280.0, 800.0, false),
+            (360.0, 640.0, true),
+            (390.0, 844.0, true),
+            (1280.0, 800.0, false),
+        ] {
+            app.world_mut()
+                .get_mut::<Window>(window)
+                .unwrap()
+                .resolution
+                .set(width, height);
+            app.update();
+            let node = app.world().get::<Node>(panel).unwrap();
+            assert_eq!(
+                node.width,
+                if mobile {
+                    percent(100)
+                } else {
+                    px(SIDEBAR_WIDTH)
+                }
+            );
+            let node = app.world().get::<Node>(status).unwrap();
+            assert_eq!(
+                node.flex_wrap,
+                if mobile {
+                    FlexWrap::Wrap
+                } else {
+                    FlexWrap::NoWrap
+                }
+            );
+            let layout = responsive_layout(Vec2::new(width, height));
+            assert!(layout.board_size.x > 0.0 && layout.board_size.y > 0.0);
+        }
     }
 
     #[test]

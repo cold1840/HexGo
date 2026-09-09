@@ -4,8 +4,8 @@ use bevy::{
 };
 
 pub fn primary_window() -> Window {
-    let resize_constraints = if cfg!(target_os = "android") {
-        // Use the minimum allowed size on Android to effectively disable resize constraints.
+    let resize_constraints = if cfg!(any(target_os = "android", target_arch = "wasm32")) {
+        // Embedded surfaces follow the available viewport, including small mobile screens.
         WindowResizeConstraints {
             min_width: 1.0,
             min_height: 1.0,
@@ -24,6 +24,22 @@ pub fn primary_window() -> Window {
         resolution: WindowResolution::new(1280, 800),
         resize_constraints,
         resizable: !cfg!(target_os = "android"),
+        canvas: Some("#hexgo-canvas".into()),
+        fit_canvas_to_parent: true,
         ..default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn web_canvas_tracks_its_container() {
+        let window = primary_window();
+        assert_eq!(window.canvas.as_deref(), Some("#hexgo-canvas"));
+        assert!(window.fit_canvas_to_parent);
+        let page = include_str!("../index.html");
+        assert!(page.contains("id=\"hexgo-canvas\""));
     }
 }
