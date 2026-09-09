@@ -41,5 +41,7 @@ mod tests {
         assert!(window.fit_canvas_to_parent);
         let page = include_str!("../index.html");
         assert!(page.contains("id=\"hexgo-canvas\""));
+        assert!(page.contains("id=\"loading-screen\""));
+        assert!(page.contains("data-initializer=\"web/loader.mjs\""));
     }
 }
