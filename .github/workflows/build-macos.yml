@@ -30,7 +30,7 @@ jobs:
       - name: Package macOS release
         run: |
           mkdir -p dist/HexGo
-          cp target/release/HexGo dist/HexGo/
+          cp target/dist/HexGo dist/HexGo/
           ditto -c -k --sequesterRsrc --keepParent \
             dist/HexGo dist/HexGo-macos-arm64.zip
 

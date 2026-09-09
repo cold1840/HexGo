@@ -31,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist/HexGo | Out-Null
-          Copy-Item target/release/HexGo.exe dist/HexGo/
+          Copy-Item target/dist/HexGo.exe dist/HexGo/
           Compress-Archive `
             -Path dist/HexGo `
             -DestinationPath dist/HexGo-windows-x86_64.zip

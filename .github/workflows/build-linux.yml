@@ -50,7 +50,7 @@ jobs:
       - name: Package Linux release
         run: |
           mkdir -p dist/HexGo
-          cp target/release/HexGo dist/HexGo/
+          cp target/dist/HexGo dist/HexGo/
           cd dist
           zip -r HexGo-linux-x86_64.zip HexGo
 
