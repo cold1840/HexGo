@@ -29,16 +29,303 @@
 
         body {
             height: 100dvh;
+            color: #fff5e3;
+            font-family:
+                Inter, "Source Han Sans SC", "Noto Sans CJK SC", "WenQuanYi Zen Hei",
+                "Microsoft YaHei", "PingFang SC", ui-sans-serif, system-ui, -apple-system,
+                BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        #hexgo-canvas {
+            opacity: 0;
+            transition: opacity 180ms ease-out;
+        }
+
+        body.app-ready #hexgo-canvas {
+            opacity: 1;
+        }
+
+        .loading-screen {
+            position: fixed;
+            z-index: 10;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            box-sizing: border-box;
+            padding: 24px;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 35%, rgb(91 64 39 / 45%), transparent 42%),
+                #1c150f;
+            opacity: 1;
+            visibility: visible;
+            transition:
+                opacity 240ms ease-out,
+                visibility 240ms ease-out;
+        }
+
+        body.app-ready .loading-screen {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .loading-card {
+            width: min(520px, 100%);
+        }
+
+        .loading-brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .loading-mark {
+            width: 52px;
+            height: 60px;
+            flex: 0 0 auto;
+            display: grid;
+            place-items: center;
+            clip-path: polygon(50% 0, 94% 25%, 94% 75%, 50% 100%, 6% 75%, 6% 25%);
+            background: #d69c3b;
+            color: #1c150f;
+            font-size: 28px;
+            font-weight: 800;
+        }
+
+        .loading-title {
+            margin: 0;
+            font-size: clamp(30px, 8vw, 42px);
+            line-height: 1;
+            letter-spacing: 0.08em;
+        }
+
+        .loading-subtitle {
+            margin: 8px 0 0;
+            color: #d1b88c;
+            font-size: 15px;
+        }
+
+        .loading-status {
+            min-height: 24px;
+            margin: 0 0 12px;
+            font-size: 16px;
+        }
+
+        .loading-progress {
+            display: block;
+            width: 100%;
+            height: 12px;
+            overflow: hidden;
+            border: 0;
+            border-radius: 999px;
+            background: #3d2d20;
+            color: #d69c3b;
+            appearance: none;
+        }
+
+        .loading-progress::-webkit-progress-bar {
+            border-radius: inherit;
+            background: #3d2d20;
+        }
+
+        .loading-progress::-webkit-progress-value {
+            border-radius: inherit;
+            background: linear-gradient(90deg, #a96f26, #e7b85b);
+            transition: width 120ms linear;
+        }
+
+        .loading-progress::-moz-progress-bar {
+            border-radius: inherit;
+            background: linear-gradient(90deg, #a96f26, #e7b85b);
+        }
+
+        .loading-progress:indeterminate {
+            background:
+                linear-gradient(90deg, transparent, #d69c3b, transparent) 0 0 / 45% 100%
+                    no-repeat,
+                #3d2d20;
+            animation: loading-indeterminate 1.2s ease-in-out infinite;
+        }
+
+        .loading-percent {
+            margin: 10px 0 22px;
+            color: #e7b85b;
+            font-size: 24px;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+
+        .loading-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin: 0;
+        }
+
+        .loading-metric {
+            min-width: 0;
+            padding: 14px;
+            border: 1px solid #59432d;
+            border-radius: 10px;
+            background: rgb(47 35 25 / 72%);
+        }
+
+        .loading-metric dt {
+            margin-bottom: 6px;
+            color: #bda47d;
+            font-size: 12px;
+        }
+
+        .loading-metric dd {
+            margin: 0;
+            overflow: hidden;
+            font-size: 14px;
+            font-variant-numeric: tabular-nums;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .loading-error {
+            margin: 24px 0 0;
+            color: #e3634f;
+        }
+
+        .loading-retry {
+            margin-top: 14px;
+            min-height: 44px;
+            padding: 0 20px;
+            border: 1px solid #d69c3b;
+            border-radius: 8px;
+            background: #593f28;
+            color: #fff5e3;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .loading-retry:hover,
+        .loading-retry:focus-visible {
+            background: #765433;
+            outline: 2px solid #e7b85b;
+            outline-offset: 2px;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        @keyframes loading-indeterminate {
+            from {
+                background-position: -80% 0;
+            }
+
+            to {
+                background-position: 180% 0;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .loading-screen {
+                padding: 20px;
+            }
+
+            .loading-brand {
+                margin-bottom: 26px;
+            }
+
+            .loading-metrics {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .loading-metric {
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 10px 12px;
+            }
+
+            .loading-metric dt {
+                margin: 0;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #hexgo-canvas,
+            .loading-screen,
+            .loading-progress::-webkit-progress-value {
+                transition: none;
+            }
+
+            .loading-progress:indeterminate {
+                animation-duration: 2.4s;
+            }
         }
     </style>
 </head>
 
 <body>
     <canvas id="hexgo-canvas"></canvas>
+
+    <main
+        id="loading-screen"
+        class="loading-screen"
+        aria-labelledby="loading-title"
+    >
+        <section class="loading-card">
+            <header class="loading-brand">
+                <div class="loading-mark" aria-hidden="true">⬡</div>
+                <div>
+                    <h1 id="loading-title" class="loading-title">HEXGO</h1>
+                    <p class="loading-subtitle">六角棋盘上的围棋对局</p>
+                </div>
+            </header>
+
+            <p
+                id="loading-status"
+                class="loading-status"
+                role="status"
+                aria-live="polite"
+            >正在准备下载…</p>
+
+            <progress
+                id="loading-progress"
+                class="loading-progress"
+                max="100"
+                value="0"
+            >0%</progress>
+            <p id="loading-percent" class="loading-percent">0%</p>
+
+            <dl class="loading-metrics">
+                <div class="loading-metric">
+                    <dt>下载进度</dt>
+                    <dd id="loading-bytes">0 B / 计算中…</dd>
+                </div>
+                <div class="loading-metric">
+                    <dt>下载速度</dt>
+                    <dd id="loading-speed">计算中…</dd>
+                </div>
+                <div class="loading-metric">
+                    <dt>剩余时间</dt>
+                    <dd id="loading-remaining">计算中…</dd>
+                </div>
+            </dl>
+
+            <div id="loading-error" class="loading-error" role="alert" hidden>
+                加载失败，请检查网络连接后重试。
+            </div>
+            <button id="loading-retry" class="loading-retry" type="button" hidden>
+                重新加载
+            </button>
+        </section>
+    </main>
+
     <link
         data-trunk
         rel="rust"
         data-bin="HexGo"
+        data-initializer="web/loader.mjs"
     >
 </body>
 </html>
