@@ -32,7 +32,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist/HexGo | Out-Null
           Copy-Item target/release/HexGo.exe dist/HexGo/
-          Copy-Item -Recurse assets dist/HexGo/
           Compress-Archive `
             -Path dist/HexGo `
             -DestinationPath dist/HexGo-windows-x86_64.zip
@@ -43,4 +42,3 @@ jobs:
           name: windows
           path: dist/HexGo-windows-x86_64.zip
           if-no-files-found: error
-

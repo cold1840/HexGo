@@ -51,7 +51,6 @@ jobs:
         run: |
           mkdir -p dist/HexGo
           cp target/release/HexGo dist/HexGo/
-          cp -R assets dist/HexGo/
           cd dist
           zip -r HexGo-linux-x86_64.zip HexGo
 
@@ -61,4 +60,3 @@ jobs:
           name: linux
           path: dist/HexGo-linux-x86_64.zip
           if-no-files-found: error
-

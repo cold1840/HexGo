@@ -31,7 +31,6 @@ jobs:
         run: |
           mkdir -p dist/HexGo
           cp target/release/HexGo dist/HexGo/
-          cp -R assets dist/HexGo/
           ditto -c -k --sequesterRsrc --keepParent \
             dist/HexGo dist/HexGo-macos-arm64.zip
 
@@ -41,4 +40,3 @@ jobs:
           name: macos
           path: dist/HexGo-macos-arm64.zip
           if-no-files-found: error
-
