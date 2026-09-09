@@ -18,3 +18,4 @@ local.properties
 
 android/keystore/
 android/keystore.properties
+dist/

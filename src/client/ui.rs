@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use std::fs;
 
 use crate::client::input::ButtonAction;
 
@@ -57,26 +56,8 @@ pub enum AdaptiveContent {
     ModalDialog,
 }
 
-fn load_cjk_font(fonts: &mut Assets<Font>) -> Handle<Font> {
-    const CANDIDATES: &[&str] = &[
-        "/system/fonts/NotoSansCJK-Regular.ttc",
-        "/system/fonts/NotoSansSC-Regular.otf",
-        "/usr/share/fonts/adobe-source-han-sans/SourceHanSansCN-Regular.otf",
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/wenquanyi/wqy-zenhei/wqy-zenhei.ttc",
-        "C:\\Windows\\Fonts\\msyh.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-    ];
-
-    for candidate in CANDIDATES {
-        if let Ok(bytes) = fs::read(candidate) {
-            info!("Loaded UI font from {}", candidate);
-            return fonts.add(Font::from_bytes(bytes));
-        }
-    }
-
-    warn!("No supported CJK system font was found; using Bevy's default font");
-    Handle::default()
+fn load_cjk_font(asset_server: &Res<AssetServer>) -> Handle<Font> {
+    asset_server.load("fonts/SourceHanSansSC-Regular.otf")
 }
 
 fn text_bundle(text: &str, font: &Handle<Font>, size: f32, color: Color) -> impl Bundle {
@@ -392,8 +373,8 @@ fn spawn_rules_modal(commands: &mut Commands, font: &Handle<Font>) {
         });
 }
 
-pub fn setup_ui(mut commands: Commands, mut fonts: ResMut<Assets<Font>>) {
-    let font = load_cjk_font(&mut fonts);
+pub fn setup_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = load_cjk_font(&asset_server);
 
     spawn_sidebar(&mut commands, &font);
     spawn_modal(&mut commands, &font);
