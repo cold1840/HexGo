@@ -8,11 +8,23 @@ name = "hex_go"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-bevy = "0.19.1"
+bevy = {
+    version = "0.19.1",
+    default-features = false,
+    features = [
+        "2d",
+        "ui",
+    ],
+}
+
 bevy_embedded_assets = "0.16"
 
 [target.'cfg(target_os = "android")'.dependencies]
-bevy = { version = "0.19.1", features = ["android-game-activity"] }
+bevy = {
+    version = "0.19.1",
+    default-features = false,
+    features = ["android-game-activity"],
+}
 
 [package.metadata.android]
 version-code = 2
