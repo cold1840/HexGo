@@ -48,7 +48,9 @@ cargo run
 
 ## 网页部署
 
-仓库根目录包含 [`vercel.json`](vercel.json)，用于安装锁定版本的 Trunk、构建 WebAssembly 发布版本并发布生成的 `dist/` 目录。将仓库导入 Vercel，并保持项目根目录为仓库根目录。此后，Vercel 会为分支推送创建预览部署，并为配置的生产分支推送创建生产部署。
+仓库根目录包含 [`vercel.json`](vercel.json)，用于下载经过校验且版本锁定的 Trunk 二进制文件、构建 WebAssembly 发布版本，并通过 Vercel Build Output API 发布。将仓库导入 Vercel，并保持项目根目录为仓库根目录。此后，Vercel 会为分支推送创建预览部署，并为配置的生产分支推送创建生产部署。
+
+成功的远程构建会缓存 Trunk 二进制文件、Cargo 注册表数据和 WebAssembly 发布构建产物。项目或分支的首次构建仍需编译 Bevy，后续构建可复用这些产物。如果在不使用现有构建缓存的情况下重新部署，将强制执行冷构建。
 
 禁止直接向 `main` 提交。
 

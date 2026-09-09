@@ -1,5 +1,6 @@
 # Rust build output
 /target
+/.vercel
 
 # Gradle and Android build output
 .gradle/
