@@ -1,6 +1,6 @@
 [package]
 name = "HexGo"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [lib]
@@ -15,7 +15,7 @@ bevy_embedded_assets = "0.16"
 bevy = { version = "0.19.1", features = ["android-game-activity"] }
 
 [package.metadata.android]
-version-code = 1
+version-code = 2
 
 [profile.release]
 opt-level = "s"
