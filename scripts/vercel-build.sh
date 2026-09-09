@@ -3,7 +3,8 @@
 set -eu
 
 trunk_version="0.21.14"
-trunk_bin=".vercel/cache/trunk/${trunk_version}/trunk"
+trunk_target="x86_64-unknown-linux-musl"
+trunk_bin=".vercel/cache/trunk/${trunk_version}/${trunk_target}/trunk"
 output_dir=".vercel/output"
 
 if [ ! -x "${trunk_bin}" ]; then
