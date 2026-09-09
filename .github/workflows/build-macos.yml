@@ -2,6 +2,10 @@ name: Build macOS
 
 on:
   workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -32,11 +36,11 @@ jobs:
           mkdir -p dist/HexGo
           cp target/dist/HexGo dist/HexGo/
           ditto -c -k --sequesterRsrc --keepParent \
-            dist/HexGo dist/HexGo-macos-arm64.zip
+            dist/HexGo dist/HexGo-${{ inputs.version }}-macos-arm64.zip
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/HexGo-macos-arm64.zip
+          path: dist/HexGo-${{ inputs.version }}-macos-arm64.zip
           if-no-files-found: error

@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version
+        required: false
+        default: dev
   push:
     tags:
       - "**"
@@ -10,17 +15,54 @@ permissions:
   contents: read
 
 jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Get Version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version || 'dev' }}"
+          fi
+
+          if [[ "$VERSION" != "dev" ]]; then
+            SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$'
+            if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
+              echo "Invalid semantic version: $VERSION" >&2
+              exit 1
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   build-linux:
+    needs: get-version
     uses: ./.github/workflows/build-linux.yml
+    with:
+      version: ${{ needs.get-version.outputs.version }}
 
   build-windows:
+    needs: get-version
     uses: ./.github/workflows/build-windows.yml
+    with:
+      version: ${{ needs.get-version.outputs.version }}
 
   build-macos:
+    needs: get-version
     uses: ./.github/workflows/build-macos.yml
+    with:
+      version: ${{ needs.get-version.outputs.version }}
 
   build-android:
+    needs: get-version
     uses: ./.github/workflows/build-android.yml
+    with:
+      version: ${{ needs.get-version.outputs.version }}
     secrets: inherit
 
   release:

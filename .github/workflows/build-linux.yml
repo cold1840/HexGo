@@ -2,6 +2,10 @@ name: Build Linux
 
 on:
   workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -52,11 +56,11 @@ jobs:
           mkdir -p dist/HexGo
           cp target/dist/HexGo dist/HexGo/
           cd dist
-          zip -r HexGo-linux-x86_64.zip HexGo
+          zip -r HexGo-${{ inputs.version }}-linux-x86_64.zip HexGo
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: dist/HexGo-linux-x86_64.zip
+          path: dist/HexGo-${{ inputs.version }}-linux-x86_64.zip
           if-no-files-found: error
