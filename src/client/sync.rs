@@ -12,7 +12,7 @@ use crate::{
         player::Player,
         state::{GameStatus, VertexState},
     },
-    session::LocalGameSession,
+    session::GameSession,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
 
@@ -156,7 +156,7 @@ pub(super) fn sync_result(
     }
 }
 
-fn compact_result_summary(session: &LocalGameSession, result: GameResult) -> String {
+fn compact_result_summary(session: &GameSession, result: GameResult) -> String {
     match result {
         GameResult::WinByResignation { winner } => {
             format!("对局结果：{}因对方认输获胜", player_name(winner))
@@ -212,7 +212,7 @@ fn player_name(player: Player) -> &'static str {
     }
 }
 
-fn result_summary(session: &LocalGameSession, result: GameResult) -> String {
+fn result_summary(session: &GameSession, result: GameResult) -> String {
     match result {
         GameResult::WinByResignation { winner } => {
             format!("对局结果\n{}因对方认输获胜", player_name(winner))
@@ -287,7 +287,7 @@ pub(super) fn sync_rules_modal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::SessionCommand;
+    use crate::session::{GameMode, SessionCommand};
 
     #[test]
     fn unrelated_ui_changes_do_not_reset_an_open_rules_scroll() {
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn score_result_lines_fit_the_sidebar_card() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         session.submit(SessionCommand::Pass).unwrap();
         session.submit(SessionCommand::Pass).unwrap();
         let summary = result_summary(&session, session.result().unwrap());

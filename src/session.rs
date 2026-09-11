@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+use std::process::abort;
+
 use crate::{
     board_layout::BoardDefinition,
     game::{
@@ -27,6 +30,13 @@ pub enum SessionError {
     GameOver,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameMode {
+    Local,
+    AI(Player),
+    Network(Player),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScoreBreakdown {
     pub black_stones: usize,
@@ -38,24 +48,30 @@ pub struct ScoreBreakdown {
     pub white_total: f64,
 }
 
-pub struct LocalGameSession {
+pub struct GameSession {
     definition: BoardDefinition,
     game: Game,
     last_move: Option<VertexId>,
+    mode: GameMode,
 }
 
-impl LocalGameSession {
-    pub fn new(definition: BoardDefinition) -> Self {
+impl GameSession {
+    pub fn new(definition: BoardDefinition, mode: GameMode) -> Self {
         let game = Game::new(definition.graph().clone());
         Self {
             definition,
             game,
             last_move: None,
+            mode,
         }
     }
 
-    pub fn compact() -> Self {
-        Self::new(BoardDefinition::compact())
+    pub fn compact(mode: GameMode) -> Self {
+        if mode == GameMode::Network(Player::Black) || mode == GameMode::Network(Player::White) {
+            abort();
+        }
+
+        Self::new(BoardDefinition::compact(), mode)
     }
 
     pub fn submit(&mut self, command: SessionCommand) -> Result<(), SessionError> {
@@ -106,6 +122,10 @@ impl LocalGameSession {
 
     pub fn result(&self) -> Option<GameResult> {
         self.game.result()
+    }
+
+    pub fn mode(&self) -> GameMode {
+        self.mode
     }
 
     pub fn score_breakdown(&self) -> ScoreBreakdown {
@@ -173,7 +193,7 @@ mod tests {
 
     #[test]
     fn accepted_moves_and_passes_update_the_session() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         let vertex = VertexId::new(0);
 
         assert_eq!(session.submit(SessionCommand::Place(vertex)), Ok(()));
@@ -191,7 +211,7 @@ mod tests {
 
     #[test]
     fn rejected_moves_leave_the_session_view_unchanged() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         let vertex = VertexId::new(0);
         session.submit(SessionCommand::Place(vertex)).unwrap();
         let player = session.current_player();
@@ -206,7 +226,7 @@ mod tests {
 
     #[test]
     fn two_passes_finish_and_restart_resets_the_game() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         session.submit(SessionCommand::Pass).unwrap();
         session.submit(SessionCommand::Pass).unwrap();
 
@@ -225,7 +245,7 @@ mod tests {
 
     #[test]
     fn resignation_and_score_breakdown_are_exposed() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         session
             .submit(SessionCommand::Place(VertexId::new(0)))
             .unwrap();

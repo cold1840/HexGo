@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     game::board::VertexId,
-    session::{LocalGameSession, SessionCommand, SessionError},
+    session::{GameMode, GameSession, SessionCommand, SessionError},
 };
 
 mod board;
@@ -27,7 +27,7 @@ pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(board::BOARD_BACKGROUND))
-            .insert_resource(SessionResource(LocalGameSession::compact()))
+            .insert_resource(SessionResource(GameSession::compact(GameMode::Local)))
             .init_resource::<UiState>();
 
         setup(app);
@@ -114,7 +114,7 @@ fn add_style_system(app: &mut App) {
 }
 
 #[derive(Resource)]
-struct SessionResource(LocalGameSession);
+struct SessionResource(GameSession);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum FocusTarget {
@@ -165,7 +165,27 @@ pub fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
-fn submit_command(session: &mut LocalGameSession, ui: &mut UiState, command: SessionCommand) {
+fn can_do_game_action(session: &GameSession, ui: &UiState) -> bool {
+    if ui.modal.is_some() {
+        return false;
+    }
+
+    let current_player = session.current_player();
+
+    match session.mode() {
+        GameMode::Local => true,
+
+        GameMode::Network(player) => player == current_player,
+
+        GameMode::AI(player) => player == current_player,
+    }
+}
+
+fn submit_command(session: &mut GameSession, ui: &mut UiState, command: SessionCommand) {
+    if !can_do_game_action(session, ui) {
+        return;
+    }
+
     match session.submit(command) {
         Ok(()) => {
             ui.feedback_is_error = false;
