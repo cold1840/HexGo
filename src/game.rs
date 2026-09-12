@@ -33,7 +33,7 @@ pub enum GameResult {
 pub struct BoardSnapshot {
     occupancy: Vec<VertexState>,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Game {
     board: BoardGraph,
     occupancy: Vec<VertexState>,

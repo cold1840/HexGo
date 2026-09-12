@@ -1,5 +1,6 @@
 #![allow(dead_code)]
-use crate::game::{Game, board::VertexId, player::Player};
+use crate::game::{Game, GameResult, board::VertexId, player::Player};
+use rand::RngExt;
 
 struct MctsNode {
     parent: Option<usize>,
@@ -26,7 +27,142 @@ impl Mcts {
         }
     }
 
-    pub fn choose_move(&mut self, game: &Game) -> Option<VertexId> {
+    fn uct(&self, parent: usize, child: usize) -> f64 {
+        let parent = &self.nodes[parent];
+        let child = &self.nodes[child];
+
+        if child.visits == 0 {
+            return f64::INFINITY;
+        }
+
+        let exploitation = child.value / child.visits as f64;
+
+        let exploration = (parent.visits as f64).ln() / child.visits as f64;
+
+        exploitation + 1.414 * exploration.sqrt()
+    }
+
+    fn select(&self, root_game: &Game) -> usize {
+        let mut node = 0;
+        let mut game = root_game.clone();
+
+        loop {
+            let current = &self.nodes[node];
+
+            if !current.untried_moves.is_empty() {
+                return node;
+            }
+
+            if current.children.is_empty() {
+                return node;
+            }
+            let player = game.current_player();
+
+            node = if player == self.player {
+                current
+                    .children
+                    .iter()
+                    .copied()
+                    .max_by(|&a, &b| self.uct(node, a).partial_cmp(&self.uct(node, b)).unwrap())
+                    .unwrap()
+            } else {
+                current
+                    .children
+                    .iter()
+                    .copied()
+                    .min_by(|&a, &b| self.uct(node, a).partial_cmp(&self.uct(node, b)).unwrap())
+                    .unwrap()
+            };
+
+            let action = self.nodes[node].action.unwrap();
+            game.play_move(action).unwrap();
+        }
+    }
+
+    fn expand(&mut self, node: usize, game: &Game) -> Option<usize> {
+        let action = self.nodes[node].untried_moves.pop()?;
+
+        let mut child_game = self.game_at(game, node)?;
+
+        child_game.play_move(action).ok()?;
+
+        let child_id = self.nodes.len();
+
+        let child = MctsNode {
+            parent: Some(node),
+            children: Vec::new(),
+            action: Some(action),
+            visits: 0,
+            value: 0.0,
+            untried_moves: child_game.legal_moves(),
+        };
+
+        self.nodes.push(child);
+
+        self.nodes[node].children.push(child_id);
+
+        Some(child_id)
+    }
+
+    fn game_at(&self, root_game: &Game, node: usize) -> Option<Game> {
+        let mut actions = Vec::new();
+
+        let mut current = node;
+
+        while let Some(parent) = self.nodes[current].parent {
+            if let Some(action) = self.nodes[current].action {
+                actions.push(action);
+            }
+            current = parent;
+        }
+
+        let mut game = root_game.clone();
+
+        for action in actions.into_iter().rev() {
+            game.play_move(action).ok()?;
+        }
+
+        Some(game)
+    }
+
+    fn simulate(&self, mut game: Game) -> f64 {
+        let mut rng = rand::rng();
+        loop {
+            let legal_moves = game.legal_moves();
+
+            if legal_moves.is_empty() {
+                break;
+            }
+
+            let index = rng.random_range(0..legal_moves.len());
+
+            let action = legal_moves[index];
+
+            game.play_move(action).unwrap();
+        }
+
+        match game.result() {
+            Some(GameResult::WinByScore { winner, margin: _ }) if winner == self.player => 1.0,
+            Some(GameResult::Draw) => 0.5,
+            Some(_) => 0.0,
+            None => 0.5,
+        }
+    }
+
+    fn backpropagate(&mut self, mut node: usize, result: f64) {
+        loop {
+            self.nodes[node].visits += 1;
+            self.nodes[node].value += result;
+
+            let Some(parent) = self.nodes[node].parent else {
+                break;
+            };
+
+            node = parent;
+        }
+    }
+
+    pub fn choose_move(&mut self, game: &Game, iterations: usize) -> Option<VertexId> {
         let legal_moves = game.legal_moves();
 
         if legal_moves.is_empty() {
@@ -44,8 +180,230 @@ impl Mcts {
             untried_moves: legal_moves,
         });
 
-        // TODO: MCTS iterations
+        for _ in 0..iterations {
+            let node = self.select(game);
 
-        None
+            let node = self.expand(node, game).unwrap_or(node);
+
+            let simulation_game = self.game_at(game, node).unwrap();
+
+            let result = self.simulate(simulation_game);
+
+            self.backpropagate(node, result);
+        }
+
+        let best_child = self.nodes[0]
+            .children
+            .iter()
+            .copied()
+            .max_by_key(|&child| self.nodes[child].visits)?;
+
+        self.nodes[best_child].action
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::board::BoardGraph;
+
+    fn test_game() -> Game {
+        let board = BoardGraph::from_edges(
+            6,
+            [
+                (VertexId::new(0), VertexId::new(1)),
+                (VertexId::new(0), VertexId::new(2)),
+                (VertexId::new(1), VertexId::new(2)),
+                (VertexId::new(1), VertexId::new(3)),
+                (VertexId::new(2), VertexId::new(4)),
+                (VertexId::new(3), VertexId::new(4)),
+                (VertexId::new(3), VertexId::new(5)),
+                (VertexId::new(4), VertexId::new(5)),
+            ],
+        )
+        .unwrap();
+
+        Game::new(board)
+    }
+
+    #[test]
+    fn choose_move_returns_legal_move() {
+        let game = test_game();
+        let player = game.current_player();
+
+        let mut mcts = Mcts::new(player);
+
+        let action = mcts.choose_move(&game, 100);
+
+        assert!(action.is_some());
+
+        let action = action.unwrap();
+
+        assert!(
+            game.legal_moves().contains(&action),
+            "MCTS returned illegal move: {action:?}"
+        );
+    }
+
+    #[test]
+    fn choose_move_does_not_modify_game() {
+        let game = test_game();
+        let before = game.clone();
+
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        assert_eq!(game, before, "choose_move modified the original game");
+    }
+
+    #[test]
+    fn root_is_visited_every_iteration() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let iterations = 100;
+
+        let _ = mcts.choose_move(&game, iterations);
+
+        assert_eq!(
+            mcts.nodes[0].visits, iterations as u32,
+            "root should be visited once per iteration"
+        );
+    }
+
+    #[test]
+    fn root_has_children() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        assert!(
+            !mcts.nodes[0].children.is_empty(),
+            "root should have children after MCTS"
+        );
+    }
+
+    #[test]
+    fn root_children_are_legal_moves() {
+        let game = test_game();
+        let legal_moves = game.legal_moves();
+
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        for &child in &mcts.nodes[0].children {
+            let node = &mcts.nodes[child];
+
+            let action = node.action.expect("root child should have an action");
+
+            assert!(
+                legal_moves.contains(&action),
+                "root child has illegal action: {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn root_children_have_visits() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        for &child in &mcts.nodes[0].children {
+            assert!(
+                mcts.nodes[child].visits > 0,
+                "expanded root child should have been visited"
+            );
+        }
+    }
+
+    #[test]
+    fn node_actions_reconstruct_valid_game() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        for node in 1..mcts.nodes.len() {
+            let reconstructed = mcts
+                .game_at(&game, node)
+                .expect("node game should be reconstructable");
+
+            let action = mcts.nodes[node]
+                .action
+                .expect("non-root node should have an action");
+
+            assert!(
+                !reconstructed.legal_moves().contains(&action),
+                "node action should already have been played"
+            );
+        }
+    }
+
+    #[test]
+    fn values_are_within_valid_range() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 100);
+
+        for (id, node) in mcts.nodes.iter().enumerate() {
+            if node.visits == 0 {
+                continue;
+            }
+
+            assert!(node.value >= 0.0, "node {id} has negative value");
+
+            assert!(
+                node.value <= node.visits as f64,
+                "node {id} value exceeds visits"
+            );
+        }
+    }
+
+    #[test]
+    fn best_move_is_one_of_root_children() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let action = mcts.choose_move(&game, 100);
+
+        let action = action.expect("MCTS should return a move");
+
+        let root_contains_action = mcts.nodes[0]
+            .children
+            .iter()
+            .any(|&child| mcts.nodes[child].action == Some(action));
+
+        assert!(
+            root_contains_action,
+            "chosen move must correspond to a root child"
+        );
+    }
+
+    #[test]
+    fn larger_search_builds_deeper_tree() {
+        let game = test_game();
+        let mut mcts = Mcts::new(game.current_player());
+
+        let _ = mcts.choose_move(&game, 1_000);
+
+        assert!(
+            mcts.nodes.iter().any(|node| node.parent.is_some()),
+            "MCTS should build nodes below root"
+        );
+
+        assert!(
+            mcts.nodes.iter().any(|node| {
+                node.parent
+                    .and_then(|parent| mcts.nodes[parent].parent)
+                    .is_some()
+            }),
+            "MCTS should build a tree deeper than one level"
+        );
     }
 }
