@@ -33,7 +33,7 @@ pub enum GameResult {
 pub struct BoardSnapshot {
     occupancy: Vec<VertexState>,
 }
-
+#[derive(Clone)]
 pub struct Game {
     board: BoardGraph,
     occupancy: Vec<VertexState>,
@@ -162,7 +162,19 @@ impl Game {
         Some(gruop)
     }
 
-    pub fn play_move(&mut self, vertex: VertexId) -> Result<(), MoveError> {
+    pub fn legal_moves(&self) -> Vec<VertexId> {
+        (0..self.occupancy.len())
+            .map(VertexId::new)
+            .filter(|&vertex| self.can_move(vertex).is_ok())
+            .collect()
+    }
+
+    fn can_move(&self, vertex: VertexId) -> Result<(), MoveError> {
+        let mut game = self.clone();
+        game.play_move_internal(vertex)
+    }
+
+    fn play_move_internal(&mut self, vertex: VertexId) -> Result<(), MoveError> {
         if self.status != GameStatus::Playing {
             return Err(MoveError::GameOver);
         }
@@ -234,6 +246,10 @@ impl Game {
         self.snapshot_history.insert(snapshot);
 
         Ok(())
+    }
+
+    pub fn play_move(&mut self, vertex: VertexId) -> Result<(), MoveError> {
+        self.play_move_internal(vertex)
     }
 
     pub fn pass_turn(&mut self) -> Result<(), PassError> {

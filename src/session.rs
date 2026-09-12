@@ -128,6 +128,10 @@ impl GameSession {
         self.mode
     }
 
+    pub fn game(&self) -> &Game {
+        &self.game
+    }
+
     pub fn score_breakdown(&self) -> ScoreBreakdown {
         let mut black_stones = 0;
         let mut white_stones = 0;

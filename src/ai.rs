@@ -1,13 +1,20 @@
 use bevy::{ecs::system::ResMut, log::error};
 
 use crate::{
+    ai::mcts::Mcts,
     client::SessionResource,
     game::board::VertexId,
     session::{GameMode, GameSession, SessionCommand},
 };
 
-fn choose_ai_move(_session: &GameSession) -> Option<VertexId> {
-    None
+mod mcts;
+
+fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
+    let game = session.game();
+
+    let mut mcts = Mcts::new(session.current_player());
+
+    mcts.choose_move(game)
 }
 
 pub(crate) fn update_ai(mut session: ResMut<SessionResource>) {
