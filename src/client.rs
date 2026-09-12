@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
+    ai,
     game::board::VertexId,
     session::{GameMode, GameSession, SessionCommand, SessionError},
 };
@@ -84,6 +85,7 @@ fn add_input_system(app: &mut App) {
             input::handle_keyboard,
             input::handle_buttons,
             input::scroll_rules,
+            ai::update_ai,
         )
             .in_set(GameSystemSet::Input)
             .chain(),
@@ -114,7 +116,7 @@ fn add_style_system(app: &mut App) {
 }
 
 #[derive(Resource)]
-struct SessionResource(GameSession);
+pub struct SessionResource(pub(crate) GameSession);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum FocusTarget {
