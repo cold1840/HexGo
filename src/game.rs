@@ -302,19 +302,32 @@ impl Game {
         self.occupancy[vertex.index()] = VertexState::Occupied(player);
 
         let mut captured = Vec::new();
-
+        let mut checked = HashSet::new();
         // Capture opponent groups with no liberties.
         for neighbor in neighbors {
             if self.vertex_state(neighbor) != Some(VertexState::Occupied(opponent)) {
                 continue;
             }
 
-            if !self.has_liberty(neighbor)
-                && let Some(group) = self.remove_group(neighbor)
-            {
-                for stone in group {
-                    captured.push(stone);
-                }
+            if checked.contains(&neighbor) {
+                continue;
+            }
+
+            if self.has_liberty(neighbor) {
+                continue;
+            }
+
+            let Some(group) = self.group(neighbor) else {
+                continue;
+            };
+
+            for &stone in &group {
+                checked.insert(stone);
+            }
+
+            for stone in group {
+                self.occupancy[stone.index()] = VertexState::Empty;
+                captured.push(stone);
             }
         }
 
