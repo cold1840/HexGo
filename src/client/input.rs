@@ -1,7 +1,7 @@
 use crate::client::ui::RulesScroll;
-use crate::client::{RULES_SCROLL_LINE, error_message, layout};
+use crate::client::{RULES_SCROLL_LINE, can_do_game_action, error_message, layout};
 use crate::game::state::GameStatus;
-use crate::session::{LocalGameSession, SessionError};
+use crate::session::{GameMode, GameSession, SessionError};
 use crate::{
     board_layout::BoardDefinition,
     client::{FocusTarget, ModalKind, SessionResource, UiState, board::BoardRoot, submit_command},
@@ -206,15 +206,17 @@ pub(super) fn handle_buttons(
             continue;
         }
         match action {
-            ButtonAction::Pass if ui.modal.is_none() => {
+            ButtonAction::Pass if can_do_game_action(&session.0, &ui) => {
                 ui.focus = FocusTarget::Pass;
                 submit_command(&mut session.0, &mut ui, SessionCommand::Pass);
             }
-            ButtonAction::Resign if ui.modal.is_none() => {
+            ButtonAction::Resign if can_do_game_action(&session.0, &ui) => {
                 ui.focus = FocusTarget::Resign;
                 request_resign(&session.0, &mut ui);
             }
-            ButtonAction::Restart if ui.modal.is_none() => {
+            ButtonAction::Restart
+                if ui.modal.is_none() && !matches!(session.0.mode(), GameMode::Network(_)) =>
+            {
                 ui.focus = FocusTarget::Restart;
                 ui.modal = Some(ModalKind::Restart);
             }
@@ -238,7 +240,7 @@ fn open_rules(ui: &mut UiState) {
     ui.modal = Some(ModalKind::Rules);
 }
 
-fn request_resign(session: &LocalGameSession, ui: &mut UiState) {
+fn request_resign(session: &GameSession, ui: &mut UiState) {
     if session.status() == GameStatus::Playing {
         ui.modal = Some(ModalKind::Resign);
     } else {
@@ -247,7 +249,7 @@ fn request_resign(session: &LocalGameSession, ui: &mut UiState) {
     }
 }
 
-fn confirm_modal(session: &mut LocalGameSession, ui: &mut UiState, modal: ModalKind) {
+fn confirm_modal(session: &mut GameSession, ui: &mut UiState, modal: ModalKind) {
     ui.modal = None;
     match modal {
         ModalKind::Resign => submit_command(session, ui, SessionCommand::Resign),
@@ -321,9 +323,12 @@ mod tests {
     use super::*;
     use crate::{
         board_layout::BoardDefinition,
-        client::input::{HIT_RADIUS, navigate_vertex, nearest_vertex},
-        client::ui::rules_summary,
+        client::{
+            input::{HIT_RADIUS, navigate_vertex, nearest_vertex},
+            ui::rules_summary,
+        },
         game::board::VertexId,
+        session::GameMode,
     };
     use bevy::math::Vec2;
 
@@ -368,7 +373,7 @@ mod tests {
 
     #[test]
     fn rules_can_be_opened_without_changing_the_game() {
-        let session = LocalGameSession::compact();
+        let session = GameSession::compact(GameMode::Local);
         let current_player = session.current_player();
         let mut ui = UiState::default();
 
@@ -382,7 +387,7 @@ mod tests {
 
     #[test]
     fn resignation_confirmation_is_not_opened_after_game_over() {
-        let mut session = LocalGameSession::compact();
+        let mut session = GameSession::compact(GameMode::Local);
         session.submit(SessionCommand::Pass).unwrap();
         session.submit(SessionCommand::Pass).unwrap();
         let mut ui = UiState::default();
