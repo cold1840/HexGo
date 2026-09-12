@@ -1,4 +1,5 @@
-#![allow(dead_code)]
+use std::time::Instant;
+
 use crate::game::{Game, GameResult, board::VertexId, player::Player};
 use rand::RngExt;
 
@@ -42,7 +43,7 @@ impl Mcts {
         exploitation + 1.414 * exploration.sqrt()
     }
 
-    fn select(&self, root_game: &Game) -> usize {
+    fn select(&self, root_game: &Game) -> (usize, Game) {
         let mut node = 0;
         let mut game = root_game.clone();
 
@@ -50,11 +51,11 @@ impl Mcts {
             let current = &self.nodes[node];
 
             if !current.untried_moves.is_empty() {
-                return node;
+                return (node, game);
             }
 
             if current.children.is_empty() {
-                return node;
+                return (node, game);
             }
             let player = game.current_player();
 
@@ -79,10 +80,10 @@ impl Mcts {
         }
     }
 
-    fn expand(&mut self, node: usize, game: &Game) -> Option<usize> {
+    fn expand(&mut self, node: usize, game: &Game) -> Option<(usize, Game)> {
         let action = self.nodes[node].untried_moves.pop()?;
 
-        let mut child_game = self.game_at(game, node)?;
+        let mut child_game = game.clone();
 
         child_game.play_move(action).ok()?;
 
@@ -101,34 +102,20 @@ impl Mcts {
 
         self.nodes[node].children.push(child_id);
 
-        Some(child_id)
-    }
-
-    fn game_at(&self, root_game: &Game, node: usize) -> Option<Game> {
-        let mut actions = Vec::new();
-
-        let mut current = node;
-
-        while let Some(parent) = self.nodes[current].parent {
-            if let Some(action) = self.nodes[current].action {
-                actions.push(action);
-            }
-            current = parent;
-        }
-
-        let mut game = root_game.clone();
-
-        for action in actions.into_iter().rev() {
-            game.play_move(action).ok()?;
-        }
-
-        Some(game)
+        Some((child_id, child_game))
     }
 
     fn simulate(&self, mut game: Game) -> f64 {
         let mut rng = rand::rng();
+        let mut moves = 0;
+
+        let mut legal_time = std::time::Duration::ZERO;
+        let mut play_time = std::time::Duration::ZERO;
+
         loop {
+            let start = Instant::now();
             let legal_moves = game.legal_moves();
+            legal_time += start.elapsed();
 
             if legal_moves.is_empty() {
                 break;
@@ -138,8 +125,16 @@ impl Mcts {
 
             let action = legal_moves[index];
 
+            let start = std::time::Instant::now();
             game.play_move(action).unwrap();
+            play_time += start.elapsed();
+            moves += 1;
         }
+
+        println!(
+            "moves={moves}, legal={:?}, play={:?}",
+            legal_time, play_time
+        );
 
         match game.result() {
             Some(GameResult::WinByScore { winner, margin: _ }) if winner == self.player => 1.0,
@@ -181,11 +176,12 @@ impl Mcts {
         });
 
         for _ in 0..iterations {
-            let node = self.select(game);
+            let (node, game) = self.select(game);
 
-            let node = self.expand(node, game).unwrap_or(node);
-
-            let simulation_game = self.game_at(game, node).unwrap();
+            let (node, simulation_game) = match self.expand(node, &game) {
+                Some(result) => result,
+                None => (node, game),
+            };
 
             let result = self.simulate(simulation_game);
 
@@ -321,6 +317,24 @@ mod tests {
         }
     }
 
+    fn replay_node(mcts: &Mcts, root: &Game, node: usize) -> Option<Game> {
+        let mut actions = Vec::new();
+        let mut current = node;
+
+        while let Some(parent) = mcts.nodes[current].parent {
+            actions.push(mcts.nodes[current].action?);
+            current = parent;
+        }
+
+        let mut game = root.clone();
+
+        for action in actions.into_iter().rev() {
+            game.play_move(action).ok()?;
+        }
+
+        Some(game)
+    }
+
     #[test]
     fn node_actions_reconstruct_valid_game() {
         let game = test_game();
@@ -329,16 +343,13 @@ mod tests {
         let _ = mcts.choose_move(&game, 100);
 
         for node in 1..mcts.nodes.len() {
-            let reconstructed = mcts
-                .game_at(&game, node)
-                .expect("node game should be reconstructable");
-
-            let action = mcts.nodes[node]
-                .action
-                .expect("non-root node should have an action");
+            let reconstructed =
+                replay_node(&mcts, &game, node).expect("node path should be reconstructable");
 
             assert!(
-                !reconstructed.legal_moves().contains(&action),
+                !reconstructed
+                    .legal_moves()
+                    .contains(&mcts.nodes[node].action.unwrap()),
                 "node action should already have been played"
             );
         }

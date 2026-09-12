@@ -98,7 +98,19 @@ impl Game {
     }
 
     pub fn group(&self, start: VertexId) -> Option<Vec<VertexId>> {
-        let state = self.vertex_state(start)?;
+        Self::gruop_in(&self.occupancy, &self.board, start)
+    }
+
+    fn gruop_in(
+        occupancy: &[VertexState],
+        board: &BoardGraph,
+        start: VertexId,
+    ) -> Option<Vec<VertexId>> {
+        if !board.contains(start) {
+            return None;
+        }
+
+        let state = occupancy[start.index()];
 
         if state == VertexState::Empty {
             return None;
@@ -114,8 +126,12 @@ impl Game {
         while let Some(cur) = queue.pop_front() {
             group.push(cur);
 
-            for &neighbor in self.board().get_neighbors(cur)? {
-                if self.vertex_state(neighbor) != Some(state) {
+            for &neighbor in board.get_neighbors(cur)? {
+                if !board.contains(neighbor) {
+                    continue;
+                }
+
+                if occupancy[neighbor.index()] != state {
                     continue;
                 }
 
@@ -127,6 +143,7 @@ impl Game {
 
         Some(group)
     }
+
     // Returns the liberties of the group containing the vertex.
     pub fn liberties(&self, start: VertexId) -> Option<Vec<VertexId>> {
         let group = self.group(start)?;
@@ -148,15 +165,61 @@ impl Game {
         Some(self.liberties(start)?.len())
     }
 
-    pub fn has_liberty(&self, start: VertexId) -> Option<bool> {
-        Some(!self.liberties(start)?.is_empty())
+    pub fn has_liberty(&self, start: VertexId) -> bool {
+        Self::has_liberty_in(&self.occupancy, &self.board, start)
+    }
+
+    fn has_liberty_in(occupancy: &[VertexState], board: &BoardGraph, start: VertexId) -> bool {
+        if !board.contains(start) {
+            return false;
+        }
+
+        let state = occupancy[start.index()];
+
+        if state == VertexState::Empty {
+            return false;
+        }
+
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        queue.push_back(start);
+        visited.insert(start);
+
+        while let Some(cur) = queue.pop_front() {
+            let Some(neighbors) = board.get_neighbors(cur) else {
+                return false;
+            };
+
+            for &neighbor in neighbors {
+                if !board.contains(neighbor) {
+                    continue;
+                }
+                match occupancy[neighbor.index()] {
+                    VertexState::Empty => return true,
+                    neighbor_state if neighbor_state == state && visited.insert(neighbor) => {
+                        queue.push_back(neighbor);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        false
     }
 
     fn remove_group(&mut self, start: VertexId) -> Option<Vec<VertexId>> {
         let gruop = self.group(start)?;
 
+        Self::remove_group_in(&mut self.occupancy, gruop)
+    }
+
+    fn remove_group_in(
+        occupancy: &mut [VertexState],
+        gruop: Vec<VertexId>,
+    ) -> Option<Vec<VertexId>> {
         for vertex in gruop.iter() {
-            self.occupancy[vertex.index()] = VertexState::Empty;
+            occupancy[vertex.index()] = VertexState::Empty;
         }
 
         Some(gruop)
@@ -165,13 +228,52 @@ impl Game {
     pub fn legal_moves(&self) -> Vec<VertexId> {
         (0..self.occupancy.len())
             .map(VertexId::new)
-            .filter(|&vertex| self.can_move(vertex).is_ok())
+            .filter(|&vertex| self.is_legal_move(vertex))
             .collect()
     }
 
-    fn can_move(&self, vertex: VertexId) -> Result<(), MoveError> {
-        let mut game = self.clone();
-        game.play_move_internal(vertex)
+    fn is_legal_move(&self, vertex: VertexId) -> bool {
+        if self.status != GameStatus::Playing {
+            return false;
+        }
+
+        if self.vertex_state(vertex) != Some(VertexState::Empty) {
+            return false;
+        }
+
+        let player = self.current_player();
+        let opponent = player.opponent();
+
+        let mut occupancy = self.occupancy.clone();
+
+        occupancy[vertex.index()] = VertexState::Occupied(player);
+
+        let neighbors = match self.board().get_neighbors(vertex) {
+            Some(neighbors) => neighbors,
+            None => return false,
+        };
+
+        for &neighbor in neighbors {
+            if occupancy[neighbor.index()] != VertexState::Occupied(opponent) {
+                continue;
+            }
+
+            if !Self::has_liberty_in(&occupancy, self.board(), neighbor)
+                && let Some(group) = Self::gruop_in(&occupancy, self.board(), neighbor)
+            {
+                Self::remove_group_in(&mut occupancy, group);
+            }
+        }
+
+        // The move is suicide if our own group has no liberty.
+        if !Self::has_liberty_in(&occupancy, self.board(), vertex) {
+            return false;
+        }
+
+        // Superko check comes last.
+        let snapshot = BoardSnapshot { occupancy };
+
+        !self.snapshot_history.contains(&snapshot)
     }
 
     fn play_move_internal(&mut self, vertex: VertexId) -> Result<(), MoveError> {
@@ -207,7 +309,7 @@ impl Game {
                 continue;
             }
 
-            if self.has_liberty(neighbor) == Some(false)
+            if !self.has_liberty(neighbor)
                 && let Some(group) = self.remove_group(neighbor)
             {
                 for stone in group {
@@ -217,7 +319,7 @@ impl Game {
         }
 
         // Prevent suicide moves.
-        if self.has_liberty(vertex) == Some(false) {
+        if !self.has_liberty(vertex) {
             self.occupancy[vertex.index()] = VertexState::Empty;
 
             // Restore captured stones.
@@ -545,14 +647,14 @@ mod test {
 
         assert_eq!(game.liberty_count(VertexId::new(0)), Some(2));
 
-        assert_eq!(game.has_liberty(VertexId::new(0)), Some(true));
+        assert!(game.has_liberty(VertexId::new(0)));
     }
 
     #[test]
     fn test_no_liberties() {
         let mut game = create_test_game();
 
-        // 全部占满
+        // full
         //
         // 0(B) --- 1(B) --- 2(W)
         //           |
@@ -570,7 +672,7 @@ mod test {
 
         assert_eq!(game.liberty_count(VertexId::new(0)), Some(0));
 
-        assert_eq!(game.has_liberty(VertexId::new(0)), Some(false));
+        assert!(!game.has_liberty(VertexId::new(0)));
     }
 
     #[test]
@@ -581,7 +683,7 @@ mod test {
 
         assert_eq!(game.liberty_count(VertexId::new(0)), None);
 
-        assert_eq!(game.has_liberty(VertexId::new(0)), None);
+        assert!(!game.has_liberty(VertexId::new(0)));
     }
 
     #[test]

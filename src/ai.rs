@@ -14,7 +14,7 @@ fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
 
     let mut mcts = Mcts::new(session.current_player());
 
-    mcts.choose_move(game, 10_000)
+    mcts.choose_move(game, 10)
 }
 
 pub(crate) fn update_ai(mut session: ResMut<SessionResource>) {

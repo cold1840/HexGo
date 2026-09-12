@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     ai,
-    game::board::VertexId,
+    game::{board::VertexId, player::Player::Black},
     session::{GameMode, GameSession, SessionCommand, SessionError},
 };
 
@@ -28,7 +28,7 @@ pub struct ClientPlugin;
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(board::BOARD_BACKGROUND))
-            .insert_resource(SessionResource(GameSession::compact(GameMode::Local)))
+            .insert_resource(SessionResource(GameSession::compact(GameMode::AI(Black))))
             .init_resource::<UiState>();
 
         setup(app);
