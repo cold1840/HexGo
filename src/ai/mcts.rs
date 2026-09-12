@@ -1,6 +1,5 @@
-use std::time::Instant;
-
 use crate::game::{Game, GameResult, board::VertexId, player::Player, state::VertexState};
+
 use rand::{Rng, RngExt};
 
 struct MctsNode {
@@ -165,7 +164,7 @@ impl Mcts {
             value: 0.0,
             untried_moves: legal_moves,
         });
-        let t = Instant::now();
+
         for _ in 0..iterations {
             let (node, game) = self.select(game, root_player);
 
@@ -178,12 +177,6 @@ impl Mcts {
 
             self.backpropagate(node, result);
         }
-
-        println!(
-            "AI thinking use {:?}, iterations {}",
-            t.elapsed(),
-            iterations
-        );
 
         let best_child = self.nodes[0]
             .children

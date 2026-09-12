@@ -1,10 +1,14 @@
-use bevy::{ecs::system::ResMut, log::error};
+use bevy::{
+    ecs::system::ResMut,
+    log::{error, info},
+};
 
 use crate::{
     ai::mcts::Mcts,
     client::SessionResource,
     game::board::VertexId,
     session::{GameMode, GameSession, SessionCommand, SessionError},
+    time::Timer,
 };
 
 mod mcts;
@@ -13,8 +17,10 @@ fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
     let game = session.game();
 
     let mut mcts = Mcts::new();
-
-    mcts.choose_move(game, 1000)
+    let t = Timer::now();
+    let vertex = mcts.choose_move(game, 1000);
+    info!("MCTS took {:.2} ms", t.elapsed_ms());
+    vertex
 }
 
 pub(crate) fn update_ai(mut session: ResMut<SessionResource>) {
