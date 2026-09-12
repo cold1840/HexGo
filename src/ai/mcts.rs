@@ -126,11 +126,10 @@ impl Mcts {
             game.play_move(action).unwrap();
         }
 
-        match game.result() {
-            Some(GameResult::WinByScore { winner, margin: _ }) if winner == root_player => 1.0,
-            Some(GameResult::Draw) => 0.5,
-            Some(_) => 0.0,
-            None => 0.5,
+        match game.score_result() {
+            GameResult::WinByScore { winner, margin: _ } if winner == root_player => 1.0,
+            GameResult::Draw => 0.5,
+            _ => 0.0,
         }
     }
 

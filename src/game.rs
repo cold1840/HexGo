@@ -493,27 +493,29 @@ impl Game {
         Score::new(black, white + self.komi)
     }
 
+    pub fn score_result(&self) -> GameResult {
+        let score = self.score();
+
+        if score.black() > score.white() {
+            GameResult::WinByScore {
+                winner: Player::Black,
+                margin: score.black() - score.white(),
+            }
+        } else if score.black() < score.white() {
+            GameResult::WinByScore {
+                winner: Player::White,
+                margin: score.white() - score.black(),
+            }
+        } else {
+            GameResult::Draw
+        }
+    }
+
     pub fn result(&self) -> Option<GameResult> {
         match self.status {
             GameStatus::Playing => None,
 
-            GameStatus::Finished(GameEndReason::ConsecutivePasses) => {
-                let score = self.score();
-
-                if score.black() > score.white() {
-                    Some(GameResult::WinByScore {
-                        winner: Player::Black,
-                        margin: score.black() - score.white(),
-                    })
-                } else if score.black() < score.white() {
-                    Some(GameResult::WinByScore {
-                        winner: Player::White,
-                        margin: score.white() - score.black(),
-                    })
-                } else {
-                    Some(GameResult::Draw)
-                }
-            }
+            GameStatus::Finished(GameEndReason::ConsecutivePasses) => Some(self.score_result()),
 
             GameStatus::Finished(GameEndReason::Resignation { winner, .. }) => {
                 Some(GameResult::WinByResignation { winner })

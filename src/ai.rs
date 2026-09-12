@@ -6,7 +6,7 @@ use bevy::{
 use crate::{
     ai::mcts::Mcts,
     client::SessionResource,
-    game::board::VertexId,
+    game::{board::VertexId, state::GameStatus},
     session::{GameMode, GameSession, SessionCommand, SessionError},
     time::Timer,
 };
@@ -19,7 +19,9 @@ fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
     let mut mcts = Mcts::new();
     let t = Timer::now();
     let vertex = mcts.choose_move(game, 1000);
-    info!("MCTS took {:.2} ms", t.elapsed_ms());
+    if game.status() == GameStatus::Playing {
+        info!("MCTS took {:.2} ms", t.elapsed_ms());
+    }
     vertex
 }
 
