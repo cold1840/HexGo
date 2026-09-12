@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 use bevy_embedded_assets::{EmbeddedAssetPlugin, PluginMode};
+mod ai;
 mod board_layout;
 mod client;
 mod game;
 mod session;
+mod time;
 mod window;
-
 /// Builds the HexGo application without starting its event loop.
 pub fn build_app() -> App {
     let mut app = App::new();
