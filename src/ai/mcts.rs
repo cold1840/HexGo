@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use crate::game::{Game, GameResult, board::VertexId, player::Player};
-use rand::RngExt;
+use crate::game::{Game, GameResult, board::VertexId, player::Player, state::VertexState};
+use rand::{Rng, RngExt};
 
 struct MctsNode {
     parent: Option<usize>,
@@ -105,6 +105,24 @@ impl Mcts {
         Some((child_id, child_game))
     }
 
+    fn random_legal_move(game: &Game, rng: &mut impl Rng) -> Option<VertexId> {
+        let mut candidates: Vec<VertexId> = (0..game.board().vertex_count())
+            .map(VertexId::new)
+            .filter(|&v| game.vertex_state(v) == Some(VertexState::Empty))
+            .collect();
+
+        while !candidates.is_empty() {
+            let index = rng.random_range(0..candidates.len());
+            let vertex = candidates.swap_remove(index);
+
+            if game.is_legal_move(vertex) {
+                return Some(vertex);
+            }
+        }
+
+        None
+    }
+
     fn simulate(&self, mut game: Game) -> f64 {
         let mut rng = rand::rng();
         let mut moves = 0;
@@ -114,16 +132,10 @@ impl Mcts {
 
         loop {
             let start = Instant::now();
-            let legal_moves = game.legal_moves();
-            legal_time += start.elapsed();
-
-            if legal_moves.is_empty() {
+            let Some(action) = Self::random_legal_move(&game, &mut rng) else {
                 break;
-            }
-
-            let index = rng.random_range(0..legal_moves.len());
-
-            let action = legal_moves[index];
+            };
+            legal_time += start.elapsed();
 
             let start = std::time::Instant::now();
             game.play_move(action).unwrap();

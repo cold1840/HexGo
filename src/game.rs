@@ -232,7 +232,7 @@ impl Game {
             .collect()
     }
 
-    fn is_legal_move(&self, vertex: VertexId) -> bool {
+    pub fn is_legal_move(&self, vertex: VertexId) -> bool {
         if self.status != GameStatus::Playing {
             return false;
         }
