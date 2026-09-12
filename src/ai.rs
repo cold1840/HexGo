@@ -12,7 +12,7 @@ mod mcts;
 fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
     let game = session.game();
 
-    let mut mcts = Mcts::new(session.current_player());
+    let mut mcts = Mcts::new();
 
     mcts.choose_move(game, 1000)
 }
