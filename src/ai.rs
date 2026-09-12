@@ -4,7 +4,7 @@ use crate::{
     ai::mcts::Mcts,
     client::SessionResource,
     game::board::VertexId,
-    session::{GameMode, GameSession, SessionCommand},
+    session::{GameMode, GameSession, SessionCommand, SessionError},
 };
 
 mod mcts;
@@ -30,13 +30,17 @@ pub(crate) fn update_ai(mut session: ResMut<SessionResource>) {
     }
 
     let Some(vertex) = choose_ai_move(&session.0) else {
-        if let Err(err) = session.0.submit(SessionCommand::Pass) {
+        if let Err(err) = session.0.submit(SessionCommand::Pass)
+            && err != SessionError::GameOver
+        {
             error!("AI fail: {:?}", err);
         }
         return;
     };
 
-    if let Err(err) = session.0.submit(SessionCommand::Place(vertex)) {
+    if let Err(err) = session.0.submit(SessionCommand::Place(vertex))
+        && err != SessionError::GameOver
+    {
         error!("AI fail: {:?}", err);
     }
 }
