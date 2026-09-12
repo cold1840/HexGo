@@ -186,7 +186,7 @@ impl Mcts {
             value: 0.0,
             untried_moves: legal_moves,
         });
-
+        let t = Instant::now();
         for _ in 0..iterations {
             let (node, game) = self.select(game);
 
@@ -199,6 +199,12 @@ impl Mcts {
 
             self.backpropagate(node, result);
         }
+
+        println!(
+            "AI thinking use {:?}, iterations {}",
+            t.elapsed(),
+            iterations
+        );
 
         let best_child = self.nodes[0]
             .children
