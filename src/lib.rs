@@ -7,6 +7,7 @@ mod game;
 mod session;
 mod time;
 mod window;
+mod worker;
 /// Builds the HexGo application without starting its event loop.
 pub fn build_app() -> App {
     let mut app = App::new();

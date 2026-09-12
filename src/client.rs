@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 
 use crate::{
-    ai,
+    ai::{self, AiState},
     game::{board::VertexId, player::Player::Black},
     session::{GameMode, GameSession, SessionCommand, SessionError},
+    worker::Worker,
 };
 
 mod board;
@@ -23,12 +24,17 @@ enum GameSystemSet {
     Style,
 }
 
+#[derive(Resource)]
+pub struct WorkerResource(pub Worker);
+
 pub struct ClientPlugin;
 
 impl Plugin for ClientPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ClearColor(board::BOARD_BACKGROUND))
             .insert_resource(SessionResource(GameSession::compact(GameMode::AI(Black))))
+            .insert_resource(WorkerResource(Worker::new()))
+            .init_resource::<AiState>()
             .init_resource::<UiState>();
 
         setup(app);

@@ -1,54 +1,132 @@
 use bevy::{
-    ecs::system::ResMut,
+    ecs::{
+        resource::Resource,
+        system::{Res, ResMut},
+    },
     log::{error, info},
 };
 
 use crate::{
     ai::mcts::Mcts,
-    client::SessionResource,
-    game::{board::VertexId, state::GameStatus},
-    session::{GameMode, GameSession, SessionCommand, SessionError},
+    client::{SessionResource, WorkerResource},
+    game::{Game, board::VertexId, state::GameStatus},
+    session::{GameMode, SessionCommand},
     time::Timer,
+    worker::Future,
 };
 
 mod mcts;
 
-fn choose_ai_move(session: &GameSession) -> Option<VertexId> {
-    let game = session.game();
+#[derive(Resource, Default)]
+pub struct AiState {
+    future: Option<Future<Option<VertexId>>>,
+}
 
+fn choose_ai_move(game: Game) -> Option<VertexId> {
     let mut mcts = Mcts::new();
     let t = Timer::now();
-    let vertex = mcts.choose_move(game, 1000);
+    let vertex = mcts.choose_move(&game, 1000);
     if game.status() == GameStatus::Playing {
         info!("MCTS took {:.2} ms", t.elapsed_ms());
     }
     vertex
 }
 
-pub(crate) fn update_ai(mut session: ResMut<SessionResource>) {
-    match session.0.mode() {
-        GameMode::AI(player) => {
-            if session.0.current_player() == player {
-                return;
-            }
-        }
-        _ => {
-            return;
-        }
-    }
-
-    let Some(vertex) = choose_ai_move(&session.0) else {
-        if let Err(err) = session.0.submit(SessionCommand::Pass)
-            && err != SessionError::GameOver
-        {
-            error!("AI fail: {:?}", err);
-        }
+pub(crate) fn update_ai(
+    mut session: ResMut<SessionResource>,
+    mut ai: ResMut<AiState>,
+    worker: Res<WorkerResource>,
+) {
+    let GameMode::AI(player) = session.0.mode() else {
         return;
     };
 
-    if let Err(err) = session.0.submit(SessionCommand::Place(vertex))
-        && err != SessionError::GameOver
-    {
-        error!("AI fail: {:?}", err);
+    if session.0.status() != GameStatus::Playing {
+        ai.future = None;
+        return;
+    }
+
+    if session.0.current_player() == player {
+        ai.future = None;
+        return;
+    }
+
+    if let Some(future) = &ai.future {
+        let Some(vertex) = future.try_get() else {
+            return;
+        };
+
+        ai.future = None;
+
+        let result = match vertex {
+            Some(vertex) => session.0.submit(SessionCommand::Place(vertex)),
+            None => session.0.submit(SessionCommand::Pass),
+        };
+
+        if let Err(err) = result {
+            error!("AI fail: {:?}", err);
+        }
+        return;
+    }
+
+    let game = session.0.game().clone();
+
+    ai.future = Some(worker.0.execute(move || choose_ai_move(game)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::player::Player::{Black, White};
+    use crate::session::GameSession;
+    use crate::worker::Worker;
+    use bevy::prelude::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    #[test]
+    fn test_ai_plays_after_human_move() {
+        let mut app = App::new();
+        app.insert_resource(SessionResource(GameSession::compact(GameMode::AI(Black))))
+            .insert_resource(WorkerResource(Worker::new()))
+            .init_resource::<AiState>()
+            .add_systems(Update, update_ai);
+
+        // Frame 0: Human turn (Black). AI should NOT move.
+        app.update();
+        assert_eq!(
+            app.world().resource::<SessionResource>().0.current_player(),
+            Black
+        );
+        assert!(app.world().resource::<AiState>().future.is_none());
+
+        // Human plays a move as Black.
+        app.world_mut()
+            .resource_mut::<SessionResource>()
+            .0
+            .submit(SessionCommand::Place(VertexId::new(0)))
+            .unwrap();
+        assert_eq!(
+            app.world().resource::<SessionResource>().0.current_player(),
+            White
+        );
+
+        // Frame 1: AI turn (White). AI should start calculation.
+        app.update();
+        assert!(app.world().resource::<AiState>().future.is_some());
+
+        // Wait for AI to finish calculation.
+        for _ in 0..100 {
+            sleep(Duration::from_millis(100));
+            app.update();
+            if app.world().resource::<SessionResource>().0.current_player() == Black {
+                break;
+            }
+        }
+
+        // AI should have made its move (White placed stone or passed), returning turn to Black.
+        let session = app.world().resource::<SessionResource>();
+        assert_eq!(session.0.current_player(), Black);
+        assert!(session.0.last_move().is_some());
     }
 }
