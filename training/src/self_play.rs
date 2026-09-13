@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 
 use hex_go::{
-    ai::{encoder::encode_game, search::Search},
+    ai::{encoder::encode_game, mcts::Mcts, search::Search},
+    board_layout::BoardDefinition,
     game::{
         Game, GameResult,
         action::{ACTION_SIZE, Action, PASS_INDEX},
@@ -10,8 +11,7 @@ use hex_go::{
 };
 
 use crate::dataset::TrainingSample;
-
-const ITERATIONS: usize = 32;
+use rayon::prelude::*;
 
 pub struct SelfPlayPosition {
     pub state: Vec<f32>,
@@ -29,7 +29,11 @@ fn policy_to_dense(policy: &[(Action, f32)]) -> Vec<f32> {
     result
 }
 
-pub fn play_game<S: Search>(game: &mut Game, mcts: &mut S) -> Vec<TrainingSample> {
+pub fn play_game<S: Search>(
+    game: &mut Game,
+    mcts: &mut S,
+    iterations: usize,
+) -> Vec<TrainingSample> {
     let mut positions = Vec::new();
     let mut moves = 0usize;
     let mut passes = 0usize;
@@ -39,7 +43,7 @@ pub fn play_game<S: Search>(game: &mut Game, mcts: &mut S) -> Vec<TrainingSample
         let player = game.current_player();
         let state = encode_game(game, player);
 
-        let search = match mcts.search(game, ITERATIONS) {
+        let search = match mcts.search(game, iterations) {
             Some(search) => search,
             None => {
                 // No legal board move: pass.
@@ -102,6 +106,24 @@ pub fn play_game<S: Search>(game: &mut Game, mcts: &mut S) -> Vec<TrainingSample
     to_training_samples(positions, result)
 }
 
+fn create_game() -> Game {
+    let board = BoardDefinition::compact().graph().clone();
+
+    Game::new(board)
+}
+
+pub fn generate_self_play_games(games: usize, iterations: usize) -> Vec<TrainingSample> {
+    (0..games)
+        .into_par_iter()
+        .flat_map(|_| {
+            let mut game = create_game();
+            let mut mcts = Mcts::new();
+
+            play_game(&mut game, &mut mcts, iterations)
+        })
+        .collect()
+}
+
 pub fn to_training_samples(
     positions: Vec<SelfPlayPosition>,
     result: GameResult,
@@ -145,6 +167,8 @@ mod tests {
 
     const TEST_VERTEX_COUNT: usize = 4;
     const TEST_INPUT_SIZE: usize = TEST_VERTEX_COUNT * 3;
+
+    const TEST_ITERATIONS: usize = 32;
 
     fn test_game() -> Game {
         let board = BoardGraph::from_edges(
@@ -195,7 +219,7 @@ mod tests {
         let mut game = test_game();
         let mut mcts = NeuralMcts::new(SelfPlayTestNetwork);
 
-        let samples = play_game(&mut game, &mut mcts);
+        let samples = play_game(&mut game, &mut mcts, TEST_ITERATIONS);
 
         assert!(!samples.is_empty());
         assert!(game.result().is_some());
@@ -216,7 +240,7 @@ mod tests {
         let mut game = test_game();
         let mut mcts = NeuralMcts::new(SelfPlayTestNetwork);
 
-        let samples = play_game(&mut game, &mut mcts);
+        let samples = play_game(&mut game, &mut mcts, TEST_ITERATIONS);
 
         assert!(!samples.is_empty());
 
@@ -236,7 +260,7 @@ mod tests {
         let mut game = test_game();
         let mut mcts = NeuralMcts::new(SelfPlayTestNetwork);
 
-        let samples = play_game(&mut game, &mut mcts);
+        let samples = play_game(&mut game, &mut mcts, TEST_ITERATIONS);
 
         assert!(!samples.is_empty());
 
@@ -257,7 +281,7 @@ mod tests {
         let mut game = test_game();
         let mut mcts = NeuralMcts::new(SelfPlayTestNetwork);
 
-        let _samples = play_game(&mut game, &mut mcts);
+        let _samples = play_game(&mut game, &mut mcts, TEST_ITERATIONS);
 
         assert!(game.result().is_some());
 
