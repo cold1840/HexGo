@@ -22,6 +22,8 @@ pub mod encoder;
 pub mod mcts;
 pub mod neural_mcts;
 pub mod neural_network;
+pub mod search_result;
+
 #[derive(Resource, Default)]
 pub struct AiState {
     future: Option<Future<Option<VertexId>>>,

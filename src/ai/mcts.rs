@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
-use crate::game::{Game, GameResult, board::VertexId, player::Player, state::VertexState};
+use crate::{
+    ai::search_result::SearchResult,
+    game::{Game, GameResult, action::Action, board::VertexId, player::Player, state::VertexState},
+};
 
 use rand::{Rng, RngExt};
 
@@ -8,12 +11,12 @@ struct MctsNode {
     parent: Option<usize>,
     children: Vec<usize>,
 
-    action: Option<VertexId>,
+    action: Option<Action>,
 
     visits: u32,
     value: f64,
 
-    untried_moves: Vec<VertexId>,
+    untried_moves: Vec<Action>,
 }
 
 #[derive(Default)]
@@ -75,15 +78,22 @@ impl Mcts {
                 })
                 .unwrap();
 
-            let action = self.nodes[node].action.unwrap();
-            game.play_move(action).unwrap();
+            match self.nodes[node].action.unwrap() {
+                Action::Move(vertex) => game.play_move(vertex).unwrap(),
+                Action::Pass => game.pass_turn().unwrap(),
+            }
         }
     }
 
     fn expand(&mut self, node: usize, game: &Game) -> Option<(usize, Game)> {
         let action = *self.nodes[node].untried_moves.last()?;
         let mut child_game = game.clone();
-        child_game.play_move(action).ok()?;
+
+        match action {
+            Action::Move(vertex) => child_game.play_move(vertex).ok()?,
+            Action::Pass => child_game.pass_turn().ok()?,
+        }
+
         self.nodes[node].untried_moves.pop();
 
         let child_id = self.nodes.len();
@@ -94,7 +104,18 @@ impl Mcts {
             action: Some(action),
             visits: 0,
             value: 0.0,
-            untried_moves: child_game.legal_moves(),
+            untried_moves: if child_game.result().is_some() {
+                Vec::new()
+            } else {
+                let mut actions = child_game
+                    .legal_moves()
+                    .into_iter()
+                    .map(Action::Move)
+                    .collect::<Vec<_>>();
+
+                actions.push(Action::Pass);
+                actions
+            },
         };
 
         self.nodes.push(child);
@@ -125,12 +146,23 @@ impl Mcts {
     fn simulate(&self, mut game: Game, root_player: Player) -> f64 {
         let mut rng = rand::rng();
 
-        while let Some(action) = Self::random_legal_move(&game, &mut rng) {
-            game.play_move(action).unwrap();
+        loop {
+            if game.result().is_some() {
+                break;
+            }
+
+            match Self::random_legal_move(&game, &mut rng) {
+                Some(action) => {
+                    game.play_move(action).unwrap();
+                }
+                None => {
+                    game.pass_turn().unwrap();
+                }
+            }
         }
 
         match game.score_result() {
-            GameResult::WinByScore { winner, margin: _ } if winner == root_player => 1.0,
+            GameResult::WinByScore { winner, .. } if winner == root_player => 1.0,
             GameResult::Draw => 0.5,
             _ => 0.0,
         }
@@ -149,12 +181,20 @@ impl Mcts {
         }
     }
 
-    pub fn choose_move(&mut self, game: &Game, iterations: usize) -> Option<VertexId> {
-        let legal_moves = game.legal_moves();
-        let root_player = game.current_player();
-        if legal_moves.is_empty() {
+    pub fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
+        if game.result().is_some() {
             return None;
         }
+
+        let mut legal_actions = game
+            .legal_moves()
+            .into_iter()
+            .map(Action::Move)
+            .collect::<Vec<_>>();
+        // Pass is always a legal action while the game is not finished.
+        legal_actions.push(Action::Pass);
+
+        let root_player = game.current_player();
 
         self.nodes.clear();
 
@@ -164,7 +204,7 @@ impl Mcts {
             action: None,
             visits: 0,
             value: 0.0,
-            untried_moves: legal_moves,
+            untried_moves: legal_actions,
         });
 
         for _ in 0..iterations {
@@ -180,13 +220,43 @@ impl Mcts {
             self.backpropagate(node, result);
         }
 
-        let best_child = self.nodes[0]
+        let root = &self.nodes[0];
+
+        let total_visits: u32 = root
+            .children
+            .iter()
+            .map(|&child| self.nodes[child].visits)
+            .sum();
+
+        if total_visits == 0 {
+            return None;
+        }
+
+        let policy = root
+            .children
+            .iter()
+            .filter_map(|&child| {
+                let node = &self.nodes[child];
+                let action = node.action?;
+
+                Some((action, node.visits as f32 / total_visits as f32))
+            })
+            .collect::<Vec<_>>();
+
+        let best_child = root
             .children
             .iter()
             .copied()
             .max_by_key(|&child| self.nodes[child].visits)?;
 
-        self.nodes[best_child].action
+        let action = self.nodes[best_child].action?;
+
+        Some(SearchResult { action, policy })
+    }
+
+    pub fn choose_action(&mut self, game: &Game, iterations: usize) -> Option<Action> {
+        let result = self.search(game, iterations)?;
+        Some(result.action)
     }
 }
 
@@ -215,21 +285,26 @@ mod tests {
     }
 
     #[test]
-    fn choose_move_returns_legal_move() {
+    fn choose_move_returns_legal_action() {
         let game = test_game();
 
         let mut mcts = Mcts::new();
 
-        let action = mcts.choose_move(&game, 100);
+        let action = mcts.choose_action(&game, 100);
 
         assert!(action.is_some());
 
-        let action = action.unwrap();
-
-        assert!(
-            game.legal_moves().contains(&action),
-            "MCTS returned illegal move: {action:?}"
-        );
+        match action.unwrap() {
+            Action::Move(vertex) => {
+                assert!(
+                    game.is_legal_move(vertex),
+                    "MCTS returned illegal move: {vertex:?}"
+                );
+            }
+            Action::Pass => {
+                assert!(!game.legal_moves().is_empty(), "MCTS returned Pass");
+            }
+        }
     }
 
     #[test]
@@ -239,7 +314,7 @@ mod tests {
 
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         assert_eq!(game, before, "choose_move modified the original game");
     }
@@ -251,7 +326,7 @@ mod tests {
 
         let iterations = 100;
 
-        let _ = mcts.choose_move(&game, iterations);
+        let _ = mcts.choose_action(&game, iterations);
 
         assert_eq!(
             mcts.nodes[0].visits, iterations as u32,
@@ -264,7 +339,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         assert!(
             !mcts.nodes[0].children.is_empty(),
@@ -273,23 +348,28 @@ mod tests {
     }
 
     #[test]
-    fn root_children_are_legal_moves() {
+    fn root_children_are_legal_actions() {
         let game = test_game();
         let legal_moves = game.legal_moves();
 
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for &child in &mcts.nodes[0].children {
             let node = &mcts.nodes[child];
 
             let action = node.action.expect("root child should have an action");
 
-            assert!(
-                legal_moves.contains(&action),
-                "root child has illegal action: {action:?}"
-            );
+            match action {
+                Action::Move(vertex) => {
+                    assert!(
+                        legal_moves.contains(&vertex),
+                        "root child has illegal move: {vertex:?}"
+                    );
+                }
+                Action::Pass => {}
+            }
         }
     }
 
@@ -298,7 +378,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for &child in &mcts.nodes[0].children {
             assert!(
@@ -320,7 +400,10 @@ mod tests {
         let mut game = root.clone();
 
         for action in actions.into_iter().rev() {
-            game.play_move(action).ok()?;
+            match action {
+                Action::Move(vertex) => game.play_move(vertex).ok()?,
+                Action::Pass => game.pass_turn().ok()?,
+            }
         }
 
         Some(game)
@@ -331,18 +414,25 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for node in 1..mcts.nodes.len() {
             let reconstructed =
                 replay_node(&mcts, &game, node).expect("node path should be reconstructable");
 
-            assert!(
-                !reconstructed
-                    .legal_moves()
-                    .contains(&mcts.nodes[node].action.unwrap()),
-                "node action should already have been played"
-            );
+            let action = mcts.nodes[node].action.expect("node should have an action");
+
+            match action {
+                Action::Move(vertex) => {
+                    assert!(
+                        !reconstructed.legal_moves().contains(&vertex),
+                        "node move should already have been played: {vertex:?}"
+                    );
+                }
+                Action::Pass => {
+                    // Pass does not correspond to a board vertex.
+                }
+            }
         }
     }
 
@@ -351,7 +441,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for (id, node) in mcts.nodes.iter().enumerate() {
             if node.visits == 0 {
@@ -372,7 +462,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let action = mcts.choose_move(&game, 100);
+        let action = mcts.choose_action(&game, 100);
 
         let action = action.expect("MCTS should return a move");
 
@@ -392,7 +482,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 1_000);
+        let _ = mcts.choose_action(&game, 1_000);
 
         assert!(
             mcts.nodes.iter().any(|node| node.parent.is_some()),

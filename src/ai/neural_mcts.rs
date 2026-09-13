@@ -1,5 +1,8 @@
 use crate::{
-    ai::neural_network::{Evaluation, NeuralNetwork},
+    ai::{
+        neural_network::{Evaluation, NeuralNetwork},
+        search_result::SearchResult,
+    },
     game::{Game, GameResult, action::Action, player::Player},
 };
 pub struct DummyNetwork;
@@ -24,11 +27,6 @@ impl NeuralNetwork for DummyNetwork {
 
         Evaluation { policy, value: 0.0 }
     }
-}
-
-pub struct SearchResult {
-    pub action: Action,
-    pub policy: Vec<(Action, f32)>,
 }
 
 struct NeuralMctsNode {
