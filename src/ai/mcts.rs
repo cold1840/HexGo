@@ -15,6 +15,7 @@ struct MctsNode {
     untried_moves: Vec<VertexId>,
 }
 
+#[derive(Default)]
 pub struct Mcts {
     nodes: Vec<MctsNode>,
 }
