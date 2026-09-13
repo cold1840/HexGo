@@ -1,5 +1,9 @@
 #![allow(dead_code)]
-use crate::game::{Game, GameResult, board::VertexId, player::Player, state::VertexState};
+
+use crate::{
+    ai::{search::Search, search_result::SearchResult},
+    game::{Game, GameResult, action::Action, board::VertexId, player::Player, state::VertexState},
+};
 
 use rand::{Rng, RngExt};
 
@@ -147,10 +151,17 @@ impl Mcts {
             node = parent;
         }
     }
+}
 
-    pub fn choose_move(&mut self, game: &Game, iterations: usize) -> Option<VertexId> {
+impl Search for Mcts {
+    fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
+        if game.result().is_some() {
+            return None;
+        }
+
         let legal_moves = game.legal_moves();
         let root_player = game.current_player();
+
         if legal_moves.is_empty() {
             return None;
         }
@@ -179,13 +190,39 @@ impl Mcts {
             self.backpropagate(node, result);
         }
 
+        let total_visits: u32 = self.nodes[0]
+            .children
+            .iter()
+            .map(|&child| self.nodes[child].visits)
+            .sum();
+
+        if total_visits == 0 {
+            return None;
+        }
+
+        let policy = self.nodes[0]
+            .children
+            .iter()
+            .filter_map(|&child| {
+                let node = &self.nodes[child];
+                let vertex = node.action?;
+
+                Some((
+                    Action::Move(vertex),
+                    node.visits as f32 / total_visits as f32,
+                ))
+            })
+            .collect::<Vec<_>>();
+
         let best_child = self.nodes[0]
             .children
             .iter()
             .copied()
             .max_by_key(|&child| self.nodes[child].visits)?;
 
-        self.nodes[best_child].action
+        let action = Action::Move(self.nodes[best_child].action?);
+
+        Some(SearchResult { action, policy })
     }
 }
 
@@ -214,21 +251,27 @@ mod tests {
     }
 
     #[test]
-    fn choose_move_returns_legal_move() {
+    fn choose_action_returns_legal_action() {
         let game = test_game();
 
         let mut mcts = Mcts::new();
 
-        let action = mcts.choose_move(&game, 100);
+        let action = mcts.choose_action(&game, 100);
 
         assert!(action.is_some());
 
-        let action = action.unwrap();
-
-        assert!(
-            game.legal_moves().contains(&action),
-            "MCTS returned illegal move: {action:?}"
-        );
+        match action.unwrap() {
+            Action::Move(vertex) => {
+                assert!(
+                    game.is_legal_move(vertex),
+                    "MCTS returned illegal move: {vertex:?}"
+                );
+            }
+            Action::Pass => {
+                // Pass is a valid action while the game is not finished.
+                assert!(game.result().is_none());
+            }
+        }
     }
 
     #[test]
@@ -238,7 +281,7 @@ mod tests {
 
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         assert_eq!(game, before, "choose_move modified the original game");
     }
@@ -250,7 +293,7 @@ mod tests {
 
         let iterations = 100;
 
-        let _ = mcts.choose_move(&game, iterations);
+        let _ = mcts.choose_action(&game, iterations);
 
         assert_eq!(
             mcts.nodes[0].visits, iterations as u32,
@@ -263,7 +306,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         assert!(
             !mcts.nodes[0].children.is_empty(),
@@ -278,7 +321,7 @@ mod tests {
 
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for &child in &mcts.nodes[0].children {
             let node = &mcts.nodes[child];
@@ -297,7 +340,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for &child in &mcts.nodes[0].children {
             assert!(
@@ -330,7 +373,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for node in 1..mcts.nodes.len() {
             let reconstructed =
@@ -350,7 +393,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 100);
+        let _ = mcts.choose_action(&game, 100);
 
         for (id, node) in mcts.nodes.iter().enumerate() {
             if node.visits == 0 {
@@ -367,22 +410,26 @@ mod tests {
     }
 
     #[test]
-    fn best_move_is_one_of_root_children() {
+    fn best_action_is_one_of_root_children() {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let action = mcts.choose_move(&game, 100);
+        let action = mcts
+            .choose_action(&game, 100)
+            .expect("MCTS should return an action");
 
-        let action = action.expect("MCTS should return a move");
+        let Action::Move(vertex) = action else {
+            panic!("pure MCTS should return a move");
+        };
 
         let root_contains_action = mcts.nodes[0]
             .children
             .iter()
-            .any(|&child| mcts.nodes[child].action == Some(action));
+            .any(|&child| mcts.nodes[child].action == Some(vertex));
 
         assert!(
             root_contains_action,
-            "chosen move must correspond to a root child"
+            "chosen action must correspond to a root child: {action:?}"
         );
     }
 
@@ -391,7 +438,7 @@ mod tests {
         let game = test_game();
         let mut mcts = Mcts::new();
 
-        let _ = mcts.choose_move(&game, 1_000);
+        let _ = mcts.choose_action(&game, 1_000);
 
         assert!(
             mcts.nodes.iter().any(|node| node.parent.is_some()),

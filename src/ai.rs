@@ -7,12 +7,9 @@ use bevy::{
 };
 
 use crate::{
-    ai::{
-        //mcts::Mcts,
-        neural_mcts::{DummyNetwork, NeuralMcts},
-    },
+    ai::{mcts::Mcts, search::Search},
     client::{SessionResource, WorkerResource},
-    game::{Game, board::VertexId, state::GameStatus},
+    game::{Game, action::Action, board::VertexId, state::GameStatus},
     session::{GameMode, SessionCommand},
     time::Timer,
     worker::Future,
@@ -22,20 +19,28 @@ pub mod encoder;
 pub mod mcts;
 pub mod neural_mcts;
 pub mod neural_network;
+pub mod search;
+pub mod search_result;
 #[derive(Resource, Default)]
 pub struct AiState {
     future: Option<Future<Option<VertexId>>>,
 }
 
 fn choose_ai_move(game: Game) -> Option<VertexId> {
-    //let mut mcts = Mcts::new();
-    let mut mcts = NeuralMcts::new(DummyNetwork);
+    let mut mcts = Mcts::new();
+    //let mut mcts = NeuralMcts::new(DummyNetwork);
     let t = Timer::now();
-    let vertex = mcts.choose_move(&game, 1000);
+    let action = mcts.choose_action(&game, 1000);
     if game.status() == GameStatus::Playing {
         info!("MCTS took {:.2} ms", t.elapsed_ms());
     }
-    vertex
+
+    let act = action?;
+
+    match act {
+        Action::Move(vertex) => Some(vertex),
+        Action::Pass => None,
+    }
 }
 
 pub(crate) fn update_ai(

@@ -1,11 +1,12 @@
+use crate::dataset::INPUT_SIZE;
 use burn::{
     nn::{Linear, LinearConfig, Relu},
     prelude::*,
 };
+use hex_go::game::action::ACTION_SIZE;
 
-const INPUT_SIZE: usize = 88 * 3;
 const HIDDEN_SIZE: usize = 128;
-const POLICY_SIZE: usize = 88;
+const POLICY_SIZE: usize = ACTION_SIZE;
 
 #[derive(Module, Debug)]
 pub struct HexGoModel<B: Backend> {
