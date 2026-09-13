@@ -5318,6 +5318,7 @@ version = "0.1.0"
 dependencies = [
  "HexGo",
  "burn",
+ "rand 0.10.2",
  "rayon",
 ]
 
