@@ -4,9 +4,13 @@ mod model;
 mod self_play;
 mod tensor;
 mod train;
+use std::fs;
+
 use burn::{
     backend::{Autodiff, Flex},
+    module::Module,
     optim::AdamConfig,
+    record::CompactRecorder,
 };
 use model::HexGoModel;
 use rand::seq::SliceRandom;
@@ -60,4 +64,12 @@ fn main() {
 
         println!("epoch={epoch}, validation_loss={validation_loss}");
     }
+
+    fs::create_dir_all("checkpoints").expect("failed to create checkpoints directory");
+
+    model
+        .save_file("checkpoints/hexgo", &CompactRecorder::new())
+        .expect("failed to save model");
+
+    println!("model saved to checkpoints/hexgo");
 }

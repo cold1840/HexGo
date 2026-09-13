@@ -53,16 +53,19 @@ pub fn validation_step<B: AutodiffBackend>(
 
     let output = model.forward(states);
 
-    let loss = total_loss(output.policy, output.value, policies, values);
+    let loss = total_loss(output.policy, policies, output.value, values);
 
-    loss.clone().into_scalar().elem::<f32>()
+    loss.into_scalar().elem::<f32>()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{dataset::TrainingSample, model::HexGoModel, tensor::samples_to_tensors};
-    use burn::{backend::Autodiff, backend::Flex, optim::AdamConfig};
+    use burn::{
+        backend::{Autodiff, Flex},
+        optim::AdamConfig,
+    };
     use hex_go::game::action::ACTION_SIZE;
 
     type Backend = Autodiff<Flex>;
@@ -170,5 +173,34 @@ mod tests {
         let loss = validation_step(&model, &samples, &device);
 
         assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn saved_model_can_be_loaded() {
+        use burn::{
+            module::{AutodiffModule, Module},
+            record::CompactRecorder,
+        };
+
+        type TestBackend = Autodiff<Flex>;
+        type InferenceBackend = Flex;
+
+        let device = Default::default();
+
+        let model = HexGoModel::<TestBackend>::new(&device);
+
+        let inference_model: HexGoModel<InferenceBackend> = model.valid();
+
+        let path = std::env::temp_dir().join("hexgo-test-model");
+
+        inference_model
+            .save_file(&path, &CompactRecorder::new())
+            .expect("failed to save model");
+
+        let _loaded_model = HexGoModel::<InferenceBackend>::new(&device)
+            .load_file(&path, &CompactRecorder::new(), &device)
+            .expect("failed to load model");
+
+        let _ = std::fs::remove_file(format!("{}.mpk", path.display()));
     }
 }
