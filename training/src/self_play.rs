@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use hex_go::{
-    ai::{encoder::encode_game, neural_mcts::NeuralMcts, neural_network::NeuralNetwork},
+    ai::{encoder::encode_game, search::Search},
     game::{
         Game, GameResult,
         action::{ACTION_SIZE, Action},
@@ -29,10 +29,7 @@ fn policy_to_dense(policy: &[(Action, f32)]) -> Vec<f32> {
     result
 }
 
-pub fn play_game<N>(game: &mut Game, mcts: &mut NeuralMcts<N>) -> Vec<TrainingSample>
-where
-    N: NeuralNetwork,
-{
+pub fn play_game<S: Search>(game: &mut Game, mcts: &mut S) -> Vec<TrainingSample> {
     let mut positions = Vec::new();
     let mut moves = 0usize;
     let mut passes = 0usize;

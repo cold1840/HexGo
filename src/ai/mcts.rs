@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    ai::search_result::SearchResult,
+    ai::{search::Search, search_result::SearchResult},
     game::{Game, GameResult, action::Action, board::VertexId, player::Player, state::VertexState},
 };
 
@@ -180,8 +180,10 @@ impl Mcts {
             node = parent;
         }
     }
+}
 
-    pub fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
+impl Search for Mcts {
+    fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
         if game.result().is_some() {
             return None;
         }
@@ -252,11 +254,6 @@ impl Mcts {
         let action = self.nodes[best_child].action?;
 
         Some(SearchResult { action, policy })
-    }
-
-    pub fn choose_action(&mut self, game: &Game, iterations: usize) -> Option<Action> {
-        let result = self.search(game, iterations)?;
-        Some(result.action)
     }
 }
 

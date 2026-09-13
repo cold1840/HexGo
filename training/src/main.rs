@@ -8,11 +8,7 @@ use burn::{
     backend::{Autodiff, Flex},
     optim::AdamConfig,
 };
-use hex_go::{
-    ai::neural_mcts::{DummyNetwork, NeuralMcts},
-    board_layout::BoardDefinition,
-    game::Game,
-};
+use hex_go::{ai::mcts::Mcts, board_layout::BoardDefinition, game::Game};
 use model::HexGoModel;
 
 use crate::{self_play::play_game, train::train_on_samples};
@@ -24,8 +20,8 @@ fn main() {
 
     let mut game = Game::new(board);
 
-    let mut mcts = NeuralMcts::new(DummyNetwork);
-
+    //let mut mcts = NeuralMcts::new(DummyNetwork);
+    let mut mcts = Mcts::new();
     let samples = play_game(&mut game, &mut mcts);
 
     println!("generated {} samples", samples.len());

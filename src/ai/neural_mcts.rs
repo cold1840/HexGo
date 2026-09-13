@@ -1,6 +1,7 @@
 use crate::{
     ai::{
         neural_network::{Evaluation, NeuralNetwork},
+        search::Search,
         search_result::SearchResult,
     },
     game::{Game, GameResult, action::Action, player::Player},
@@ -157,8 +158,10 @@ impl<N: NeuralNetwork> NeuralMcts<N> {
             GameResult::Draw => 0.0,
         }
     }
+}
 
-    pub fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
+impl<N: NeuralNetwork> Search for NeuralMcts<N> {
+    fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
         if game.result().is_some() {
             return None;
         }
@@ -221,13 +224,8 @@ impl<N: NeuralNetwork> NeuralMcts<N> {
 
         Some(SearchResult { action, policy })
     }
-
-    pub fn choose_action(&mut self, game: &Game, iterations: usize) -> Option<Action> {
-        let result = self.search(game, iterations)?;
-
-        Some(result.action)
-    }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
