@@ -45,3 +45,11 @@ inherits = "release"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"
+
+[workspace]
+members = [
+    ".",
+    "training",
+]
+
+resolver = "3"

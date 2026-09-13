@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 use bevy_embedded_assets::{EmbeddedAssetPlugin, PluginMode};
-mod ai;
-mod board_layout;
+pub mod ai;
+pub mod board_layout;
 mod client;
-mod game;
-mod session;
+pub mod game;
+pub mod session;
 mod time;
 mod window;
 mod worker;
