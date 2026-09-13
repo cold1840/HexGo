@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+
 use crate::game::{Game, GameResult, board::VertexId, player::Player, state::VertexState};
 
 use rand::{Rng, RngExt};

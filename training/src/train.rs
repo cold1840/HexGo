@@ -5,7 +5,9 @@ use burn::{
     tensor::{ElementConversion, backend::AutodiffBackend},
 };
 
-use crate::{loss::total_loss, model::HexGoModel};
+use crate::{
+    dataset::TrainingSample, loss::total_loss, model::HexGoModel, tensor::samples_to_tensors,
+};
 
 pub fn train_step<B: AutodiffBackend>(
     model: HexGoModel<B>,
@@ -28,6 +30,18 @@ pub fn train_step<B: AutodiffBackend>(
     let model = optimizer.step(learning_rate, model, grads);
 
     (model, loss_value)
+}
+
+pub fn train_on_samples<B: AutodiffBackend>(
+    model: HexGoModel<B>,
+    optimizer: &mut impl Optimizer<HexGoModel<B>, B>,
+    samples: &[TrainingSample],
+    device: &B::Device,
+    learning_rate: f64,
+) -> (HexGoModel<B>, f32) {
+    let (state, policy, value) = samples_to_tensors::<B>(samples, device);
+
+    train_step(model, state, policy, value, optimizer, learning_rate)
 }
 
 #[cfg(test)]

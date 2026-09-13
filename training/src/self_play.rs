@@ -11,6 +11,8 @@ use hex_go::{
 
 use crate::dataset::TrainingSample;
 
+const ITERATIONS: usize = 32;
+
 pub struct SelfPlayPosition {
     pub state: Vec<f32>,
     pub policy: Vec<f32>,
@@ -32,32 +34,55 @@ where
     N: NeuralNetwork,
 {
     let mut positions = Vec::new();
+    let mut moves = 0usize;
+    let mut passes = 0usize;
 
+    let mut actions = 0usize;
     while game.result().is_none() {
         let player = game.current_player();
         let state = encode_game(game, player);
 
-        let search = mcts.search(game, 800).unwrap();
+        let search = mcts.search(game, 32).unwrap();
         let policy = policy_to_dense(&search.policy);
+
+        match search.action {
+            Action::Move(vertex) => {
+                moves += 1;
+
+                game.play_move(vertex).unwrap();
+            }
+            Action::Pass => {
+                passes += 1;
+
+                game.pass_turn().unwrap();
+            }
+        }
+        actions += 1;
+
         positions.push(SelfPlayPosition {
             state,
             policy,
             player,
         });
 
-        match search.action {
-            Action::Move(vertex) => {
-                game.play_move(vertex).unwrap();
-            }
-            Action::Pass => {
-                game.pass_turn().unwrap();
-            }
+        if actions.is_multiple_of(1000) {
+            println!(
+                "actions={}, legal_moves={}, result={:?}",
+                actions,
+                game.legal_moves().len(),
+                game.result()
+            );
         }
     }
 
-    let Some(result) = game.result() else {
-        return Vec::new();
-    };
+    println!(
+        "game finished: positions={}, moves={}, passes={}",
+        positions.len(),
+        moves,
+        passes
+    );
+
+    let result = game.result().unwrap();
 
     to_training_samples(positions, result)
 }
