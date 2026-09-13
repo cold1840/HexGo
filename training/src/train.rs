@@ -44,6 +44,20 @@ pub fn train_on_samples<B: AutodiffBackend>(
     train_step(model, state, policy, value, optimizer, learning_rate)
 }
 
+pub fn validation_step<B: AutodiffBackend>(
+    model: &HexGoModel<B>,
+    samples: &[TrainingSample],
+    device: &B::Device,
+) -> f32 {
+    let (states, policies, values) = samples_to_tensors(samples, device);
+
+    let output = model.forward(states);
+
+    let loss = total_loss(output.policy, output.value, policies, values);
+
+    loss.clone().into_scalar().elem::<f32>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +117,58 @@ mod tests {
             final_loss < initial_loss,
             "loss did not decrease: initial={initial_loss}, final={final_loss}"
         );
+    }
+
+    type TestBackend = burn::backend::Autodiff<burn::backend::Flex>;
+
+    const INPUT_SIZE: usize = 88 * 3;
+
+    fn test_samples() -> Vec<TrainingSample> {
+        vec![
+            TrainingSample {
+                state: vec![0.0; INPUT_SIZE],
+                policy: {
+                    let mut policy = vec![0.0; ACTION_SIZE];
+                    policy[0] = 1.0;
+                    policy
+                },
+                value: 1.0,
+            },
+            TrainingSample {
+                state: vec![1.0; INPUT_SIZE],
+                policy: {
+                    let mut policy = vec![0.0; ACTION_SIZE];
+                    policy[1] = 1.0;
+                    policy
+                },
+                value: -1.0,
+            },
+        ]
+    }
+
+    #[test]
+    fn validation_step_returns_finite_loss() {
+        let device = Default::default();
+        let model = HexGoModel::<TestBackend>::new(&device);
+
+        let samples = test_samples();
+
+        let loss = validation_step(&model, &samples, &device);
+
+        assert!(
+            loss.is_finite(),
+            "validation loss must be finite, got {loss:?}"
+        );
+    }
+
+    #[test]
+    fn validation_step_does_not_require_optimizer() {
+        let device = Default::default();
+        let model = HexGoModel::<TestBackend>::new(&device);
+        let samples = test_samples();
+
+        let loss = validation_step(&model, &samples, &device);
+
+        assert!(loss.is_finite());
     }
 }

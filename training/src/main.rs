@@ -11,7 +11,10 @@ use burn::{
 use model::HexGoModel;
 use rand::seq::SliceRandom;
 
-use crate::{self_play::generate_self_play_games, train::train_on_samples};
+use crate::{
+    self_play::generate_self_play_games,
+    train::{train_on_samples, validation_step},
+};
 type Backend = Autodiff<Flex>;
 
 const SELF_PLAY_GAMES: usize = 32;
@@ -52,5 +55,9 @@ fn main() {
 
             println!("epoch={epoch}, batch={batch_index}, loss={loss}");
         }
+
+        let validation_loss = validation_step(&model, validation_samples, &device);
+
+        println!("epoch={epoch}, validation_loss={validation_loss}");
     }
 }
