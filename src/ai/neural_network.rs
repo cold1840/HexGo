@@ -1,7 +1,7 @@
-use crate::game::{Game, board::VertexId, player::Player};
+use crate::game::{Game, action::Action, player::Player};
 
 pub struct Evaluation {
-    pub policy: Vec<(VertexId, f32)>,
+    pub policy: Vec<(Action, f32)>,
     pub value: f32,
 }
 

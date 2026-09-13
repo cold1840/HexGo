@@ -35,6 +35,7 @@ mod tests {
     use super::*;
     use crate::{dataset::TrainingSample, model::HexGoModel, tensor::samples_to_tensors};
     use burn::{backend::Autodiff, backend::Flex, optim::AdamConfig};
+    use hex_go::game::action::ACTION_SIZE;
 
     type Backend = Autodiff<Flex>;
 
@@ -45,7 +46,7 @@ mod tests {
         let samples = vec![TrainingSample {
             state: vec![0.0; 264],
             policy: {
-                let mut p = vec![0.0; 88];
+                let mut p = vec![0.0; ACTION_SIZE];
                 p[0] = 1.0;
                 p
             },

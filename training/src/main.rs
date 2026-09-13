@@ -1,6 +1,7 @@
 mod dataset;
 mod loss;
 mod model;
+mod self_play;
 mod tensor;
 mod train;
 use burn::backend::Flex;

@@ -1,30 +1,41 @@
 use crate::{
     ai::neural_network::{Evaluation, NeuralNetwork},
-    game::{Game, GameResult, board::VertexId, player::Player},
+    game::{Game, GameResult, action::Action, player::Player},
 };
-
 pub struct DummyNetwork;
 
 impl NeuralNetwork for DummyNetwork {
     fn evaluate(&self, game: &Game, _player: Player) -> Evaluation {
         let legal_moves = game.legal_moves();
-        let prior = 1.0 / legal_moves.len() as f32;
 
-        Evaluation {
-            policy: legal_moves
-                .into_iter()
-                .map(|action| (action, prior))
-                .collect(),
-            value: 0.0,
+        let mut policy = Vec::with_capacity(legal_moves.len() + 1);
+
+        if legal_moves.is_empty() {
+            policy.push((Action::Pass, 1.0));
+        } else {
+            let prior = 1.0 / legal_moves.len() as f32;
+
+            for action in legal_moves {
+                policy.push((Action::Move(action), prior));
+            }
+
+            policy.push((Action::Pass, 0.0));
         }
+
+        Evaluation { policy, value: 0.0 }
     }
+}
+
+pub struct SearchResult {
+    pub action: Action,
+    pub policy: Vec<(Action, f32)>,
 }
 
 struct NeuralMctsNode {
     parent: Option<usize>,
     children: Vec<usize>,
 
-    action: Option<VertexId>,
+    action: Option<Action>,
 
     prior: f32,
     visits: u32,
@@ -90,17 +101,22 @@ impl<N: NeuralNetwork> NeuralMcts<N> {
                 })
                 .unwrap();
 
-            let action = self.nodes[node].action.unwrap();
-            game.play_move(action).unwrap();
+            match self.nodes[node].action.unwrap() {
+                Action::Move(vertex) => game.play_move(vertex).unwrap(),
+                Action::Pass => game.pass_turn().unwrap(),
+            }
         }
     }
 
     fn expand(&mut self, node: usize, game: &Game, evaluation: &Evaluation) {
         for (action, prior) in evaluation.policy.iter() {
-            if !game.is_legal_move(*action) {
+            let legal = match action {
+                Action::Move(vertex) => game.is_legal_move(*vertex),
+                Action::Pass => true,
+            };
+            if !legal {
                 continue;
             }
-
             let child_id = self.nodes.len();
 
             self.nodes.push(NeuralMctsNode {
@@ -144,10 +160,8 @@ impl<N: NeuralNetwork> NeuralMcts<N> {
         }
     }
 
-    pub fn choose_move(&mut self, game: &Game, iterations: usize) -> Option<VertexId> {
-        let legal_moves = game.legal_moves();
-
-        if legal_moves.is_empty() {
+    pub fn search(&mut self, game: &Game, iterations: usize) -> Option<SearchResult> {
+        if game.result().is_some() {
             return None;
         }
 
@@ -180,20 +194,49 @@ impl<N: NeuralNetwork> NeuralMcts<N> {
             self.backpropagate(node, evaluation.value);
         }
 
+        let total_visits: u32 = self.nodes[0]
+            .children
+            .iter()
+            .map(|&child| self.nodes[child].visits)
+            .sum();
+
+        let policy = self.nodes[0]
+            .children
+            .iter()
+            .map(|&child| {
+                let node = &self.nodes[child];
+
+                (
+                    node.action.unwrap(),
+                    node.visits as f32 / total_visits as f32,
+                )
+            })
+            .collect();
+
         let best_child = self.nodes[0]
             .children
             .iter()
             .copied()
             .max_by_key(|&child| self.nodes[child].visits)?;
 
-        self.nodes[best_child].action
+        let action = self.nodes[best_child].action?;
+
+        Some(SearchResult { action, policy })
+    }
+
+    pub fn choose_action(&mut self, game: &Game, iterations: usize) -> Option<Action> {
+        let result = self.search(game, iterations)?;
+
+        Some(result.action)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{Game, board::BoardGraph};
+    use crate::game::{
+        Game,
+        board::{BoardGraph, VertexId},
+    };
 
     fn test_game() -> Game {
         let board = BoardGraph::from_edges(
@@ -210,14 +253,16 @@ mod tests {
     }
 
     #[test]
-    fn neural_mcts_returns_legal_move() {
+    fn neural_mcts_returns_legal_action() {
         let game = test_game();
         let mut mcts = NeuralMcts::new(DummyNetwork);
 
-        let action = mcts.choose_move(&game, 100);
+        let action = mcts.choose_action(&game, 100).unwrap();
 
-        assert!(action.is_some());
-        assert!(game.is_legal_move(action.unwrap()));
+        match action {
+            Action::Move(vertex) => assert!(game.is_legal_move(vertex)),
+            Action::Pass => {}
+        }
     }
 
     #[test]
@@ -225,7 +270,7 @@ mod tests {
         let game = test_game();
         let mut mcts = NeuralMcts::new(DummyNetwork);
 
-        mcts.choose_move(&game, 100);
+        mcts.choose_action(&game, 100);
 
         assert_eq!(mcts.nodes[0].visits, 100);
     }
@@ -235,13 +280,15 @@ mod tests {
         let game = test_game();
         let mut mcts = NeuralMcts::new(DummyNetwork);
 
-        mcts.choose_move(&game, 100);
+        mcts.choose_action(&game, 100);
 
         assert!(!mcts.nodes[0].children.is_empty());
 
         for &child in &mcts.nodes[0].children {
-            let action = mcts.nodes[child].action.unwrap();
-            assert!(game.is_legal_move(action));
+            match mcts.nodes[child].action.unwrap() {
+                Action::Move(vertex) => assert!(game.is_legal_move(vertex)),
+                Action::Pass => {}
+            }
         }
     }
 
@@ -250,20 +297,21 @@ mod tests {
         let game = test_game();
         let mut mcts = NeuralMcts::new(DummyNetwork);
 
-        mcts.choose_move(&game, 1);
+        mcts.choose_action(&game, 1);
 
         let root = &mcts.nodes[0];
 
         for &child in &root.children {
-            assert!(mcts.nodes[child].prior > 0.0);
+            assert!(mcts.nodes[child].prior >= 0.0);
         }
     }
+
     #[test]
     fn neural_mcts_root_prior_sums_to_one() {
         let game = test_game();
         let mut mcts = NeuralMcts::new(DummyNetwork);
 
-        mcts.choose_move(&game, 1);
+        mcts.choose_action(&game, 1);
 
         let sum: f32 = mcts.nodes[0]
             .children
@@ -281,30 +329,48 @@ mod tests {
             let legal_moves = game.legal_moves();
             let preferred = VertexId::new(0);
 
-            let others = legal_moves.len().saturating_sub(1);
+            let mut policy = Vec::with_capacity(legal_moves.len() + 1);
 
-            let policy = legal_moves
-                .into_iter()
-                .map(|action| {
-                    let prior = if action == preferred || others == 0 {
-                        if others == 0 { 1.0 } else { 0.9 }
-                    } else {
-                        0.1 / others as f32
-                    };
+            if legal_moves.contains(&preferred) {
+                let other_count = legal_moves.len() - 1;
 
-                    (action, prior)
-                })
-                .collect();
+                if other_count == 0 {
+                    policy.push((Action::Move(preferred), 1.0));
+                } else {
+                    for vertex in legal_moves {
+                        let prior = if vertex == preferred {
+                            0.9
+                        } else {
+                            0.1 / other_count as f32
+                        };
+
+                        policy.push((Action::Move(vertex), prior));
+                    }
+                }
+            } else {
+                let prior = if legal_moves.is_empty() {
+                    0.0
+                } else {
+                    1.0 / legal_moves.len() as f32
+                };
+
+                for vertex in legal_moves {
+                    policy.push((Action::Move(vertex), prior));
+                }
+            }
+
+            policy.push((Action::Pass, 0.0));
 
             Evaluation { policy, value: 0.0 }
         }
     }
+
     #[test]
     fn neural_mcts_follows_policy_prior() {
         let game = test_game();
         let mut mcts = NeuralMcts::new(BiasedNetwork);
 
-        mcts.choose_move(&game, 1000);
+        mcts.choose_action(&game, 1000);
 
         let preferred = VertexId::new(0);
 
@@ -312,7 +378,7 @@ mod tests {
             .children
             .iter()
             .copied()
-            .find(|&child| mcts.nodes[child].action == Some(preferred))
+            .find(|&child| mcts.nodes[child].action == Some(Action::Move(preferred)))
             .unwrap();
 
         let preferred_visits = mcts.nodes[preferred_child].visits;
@@ -321,7 +387,7 @@ mod tests {
             .children
             .iter()
             .copied()
-            .filter(|&child| mcts.nodes[child].action != Some(preferred))
+            .filter(|&child| mcts.nodes[child].action != Some(Action::Move(preferred)))
             .map(|child| mcts.nodes[child].visits)
             .sum();
 
@@ -360,8 +426,7 @@ mod tests {
             })
         );
 
-        // After the game ends, current_player has already switched to Black.
-        // The player who actually ended the game is White.
+        // The successful last pass switches current_player to Black.
         assert_eq!(game.current_player(), Player::Black);
 
         let value = NeuralMcts::<DummyNetwork>::terminal_value(
@@ -398,7 +463,7 @@ mod tests {
         mcts.nodes.push(NeuralMctsNode {
             parent: Some(0),
             children: Vec::new(),
-            action: Some(VertexId::new(0)),
+            action: Some(Action::Move(VertexId::new(0))),
             prior: 0.5,
             visits: 10,
             value_sum: -8.0,
@@ -407,7 +472,7 @@ mod tests {
         mcts.nodes.push(NeuralMctsNode {
             parent: Some(0),
             children: Vec::new(),
-            action: Some(VertexId::new(1)),
+            action: Some(Action::Move(VertexId::new(1))),
             prior: 0.5,
             visits: 10,
             value_sum: 0.0,

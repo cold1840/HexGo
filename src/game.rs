@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod action;
 pub mod board;
 pub mod error;
 pub mod player;
