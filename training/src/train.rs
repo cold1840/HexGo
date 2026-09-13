@@ -44,11 +44,28 @@ pub fn train_on_samples<B: AutodiffBackend>(
     train_step(model, state, policy, value, optimizer, learning_rate)
 }
 
+pub fn validation_step<B: AutodiffBackend>(
+    model: &HexGoModel<B>,
+    samples: &[TrainingSample],
+    device: &B::Device,
+) -> f32 {
+    let (states, policies, values) = samples_to_tensors(samples, device);
+
+    let output = model.forward(states);
+
+    let loss = total_loss(output.policy, policies, output.value, values);
+
+    loss.into_scalar().elem::<f32>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{dataset::TrainingSample, model::HexGoModel, tensor::samples_to_tensors};
-    use burn::{backend::Autodiff, backend::Flex, optim::AdamConfig};
+    use burn::{
+        backend::{Autodiff, Flex},
+        optim::AdamConfig,
+    };
     use hex_go::game::action::ACTION_SIZE;
 
     type Backend = Autodiff<Flex>;
@@ -103,5 +120,87 @@ mod tests {
             final_loss < initial_loss,
             "loss did not decrease: initial={initial_loss}, final={final_loss}"
         );
+    }
+
+    type TestBackend = burn::backend::Autodiff<burn::backend::Flex>;
+
+    const INPUT_SIZE: usize = 88 * 3;
+
+    fn test_samples() -> Vec<TrainingSample> {
+        vec![
+            TrainingSample {
+                state: vec![0.0; INPUT_SIZE],
+                policy: {
+                    let mut policy = vec![0.0; ACTION_SIZE];
+                    policy[0] = 1.0;
+                    policy
+                },
+                value: 1.0,
+            },
+            TrainingSample {
+                state: vec![1.0; INPUT_SIZE],
+                policy: {
+                    let mut policy = vec![0.0; ACTION_SIZE];
+                    policy[1] = 1.0;
+                    policy
+                },
+                value: -1.0,
+            },
+        ]
+    }
+
+    #[test]
+    fn validation_step_returns_finite_loss() {
+        let device = Default::default();
+        let model = HexGoModel::<TestBackend>::new(&device);
+
+        let samples = test_samples();
+
+        let loss = validation_step(&model, &samples, &device);
+
+        assert!(
+            loss.is_finite(),
+            "validation loss must be finite, got {loss:?}"
+        );
+    }
+
+    #[test]
+    fn validation_step_does_not_require_optimizer() {
+        let device = Default::default();
+        let model = HexGoModel::<TestBackend>::new(&device);
+        let samples = test_samples();
+
+        let loss = validation_step(&model, &samples, &device);
+
+        assert!(loss.is_finite());
+    }
+
+    #[test]
+    fn saved_model_can_be_loaded() {
+        use burn::{
+            module::{AutodiffModule, Module},
+            record::CompactRecorder,
+        };
+
+        type TestBackend = Autodiff<Flex>;
+        type InferenceBackend = Flex;
+
+        let device = Default::default();
+
+        let model = HexGoModel::<TestBackend>::new(&device);
+
+        let inference_model: HexGoModel<InferenceBackend> = model.valid();
+
+        let path = std::env::temp_dir().join("hexgo-test-model");
+
+        inference_model
+            .save_file(&path, &CompactRecorder::new())
+            .expect("failed to save model");
+
+        let _loaded_model = HexGoModel::<InferenceBackend>::new(&device)
+            .load_file(&path, &CompactRecorder::new(), &device)
+            .expect("failed to load model");
+
+        let _ = std::fs::remove_file(format!("{}.mpk", path.display()));
     }
 }

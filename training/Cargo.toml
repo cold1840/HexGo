@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 burn = { version = "0.21", features = ["flex","autodiff"] }
 rayon = "1.11"
+rand = "0.10.2"
 HexGo = { path = ".." }
