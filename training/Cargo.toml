@@ -1,0 +1,8 @@
+[package]
+name = "hexgo-training"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+burn = { version = "0.21", features = ["flex","autodiff"] }
+HexGo = { path = ".." }
