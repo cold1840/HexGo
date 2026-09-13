@@ -4,7 +4,7 @@ use hex_go::{
     ai::{encoder::encode_game, search::Search},
     game::{
         Game, GameResult,
-        action::{ACTION_SIZE, Action},
+        action::{ACTION_SIZE, Action, PASS_INDEX},
         player::Player,
     },
 };
@@ -39,7 +39,25 @@ pub fn play_game<S: Search>(game: &mut Game, mcts: &mut S) -> Vec<TrainingSample
         let player = game.current_player();
         let state = encode_game(game, player);
 
-        let search = mcts.search(game, 32).unwrap();
+        let search = match mcts.search(game, ITERATIONS) {
+            Some(search) => search,
+            None => {
+                // No legal board move: pass.
+                let mut policy = vec![0.0; ACTION_SIZE];
+                policy[PASS_INDEX] = 1.0;
+
+                positions.push(SelfPlayPosition {
+                    state,
+                    policy,
+                    player,
+                });
+                // End the game immediately to avoid unnecessary passes.
+                passes += 2;
+                game.pass_turn().unwrap();
+                game.pass_turn().unwrap();
+                continue;
+            }
+        };
         let policy = policy_to_dense(&search.policy);
 
         match search.action {
