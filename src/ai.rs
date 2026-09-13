@@ -7,7 +7,10 @@ use bevy::{
 };
 
 use crate::{
-    ai::mcts::Mcts,
+    ai::{
+        //mcts::Mcts,
+        neural_mcts::{DummyNetwork, NeuralMcts},
+    },
     client::{SessionResource, WorkerResource},
     game::{Game, board::VertexId, state::GameStatus},
     session::{GameMode, SessionCommand},
@@ -16,6 +19,8 @@ use crate::{
 };
 
 mod mcts;
+mod neural_mcts;
+mod neural_network;
 
 #[derive(Resource, Default)]
 pub struct AiState {
@@ -23,7 +28,8 @@ pub struct AiState {
 }
 
 fn choose_ai_move(game: Game) -> Option<VertexId> {
-    let mut mcts = Mcts::new();
+    //let mut mcts = Mcts::new();
+    let mut mcts = NeuralMcts::new(DummyNetwork);
     let t = Timer::now();
     let vertex = mcts.choose_move(&game, 1000);
     if game.status() == GameStatus::Playing {
